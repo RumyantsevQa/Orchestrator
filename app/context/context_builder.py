@@ -1,18 +1,28 @@
-from pathlib import Path
+from app.context.providers.vault_provider import VaultProvider
+from app.context.context_resolver import ContextResolver
 
 
 class ContextBuilder:
-    """
-    Загружает знания для выбранного Skill.
-    """
 
     def __init__(self):
-        self.knowledge_path = Path("knowledge")
 
-    def build(self, skill: str) -> str:
-        file_path = self.knowledge_path / f"{skill}.md"
+        self.provider = VaultProvider(
+            "/Users/ilya_motion/Job/QASkills"
+        )
 
-        if not file_path.exists():
-            return ""
+        self.resolver = ContextResolver()
 
-        return file_path.read_text(encoding="utf-8")
+    def build(self, user_request: str) -> str:
+
+        documents = self.resolver.resolve(user_request)
+
+        context = []
+
+        for document in documents:
+
+            text = self.provider.read_note(document)
+
+            if text:
+                context.append(text)
+
+        return "\n\n".join(context)
