@@ -1,6 +1,11 @@
 # Python
 __pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # Virtual environment
 .venv/
@@ -13,3 +18,12 @@ __pycache__/
 
 # Logs
 *.log
+
+# Local QASkills runtime state
+.qaskills/
+knowledge/QASkills/Memory/Inbox/
+knowledge/QASkills/Memory/Snapshots/
+
+.env
+.env.local
+.env.*.local
