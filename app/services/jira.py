@@ -140,8 +140,9 @@ class JiraService(BaseService):
 
         fields = issue.get("fields", {})
         description = adf_to_text(fields.get("description"))
+        issue_key = issue.get("key") or issue_key
         lines = [
-            f"Jira Issue {issue.get('key') or issue_key}",
+            f"Jira Issue {issue_key}",
             f"Summary: {fields.get('summary') or 'Unavailable'}",
             f"Status: {self._named_value(fields.get('status'))}",
             f"Assignee: {self._user_value(fields.get('assignee'), fallback='Unassigned')}",
@@ -159,7 +160,22 @@ class JiraService(BaseService):
             metadata={
                 "capability": "jira.get_issue",
                 "connected": True,
-                "issue_key": issue.get("key") or issue_key,
+                "issue_key": issue_key,
+                "issue": {
+                    "key": issue_key,
+                    "summary": fields.get("summary") or "",
+                    "updated": str(fields.get("updated") or ""),
+                    "status": self._named_value(fields.get("status")),
+                    "assignee": self._user_value(
+                        fields.get("assignee"),
+                        fallback="Unassigned",
+                    ),
+                    "priority": self._named_value(fields.get("priority")),
+                    "reporter": self._user_value(fields.get("reporter")),
+                    "description": description,
+                    "comments": self._comments(fields.get("comment")),
+                    "links": self._issue_links(fields.get("issuelinks")),
+                },
             },
         )
 
@@ -347,3 +363,54 @@ class JiraService(BaseService):
             return fallback
 
         return str(value.get("displayName") or value.get("accountId") or fallback)
+
+    def _comments(self, value: object) -> list[dict[str, str]]:
+        if not isinstance(value, dict):
+            return []
+
+        comments = []
+
+        for item in value.get("comments", []):
+            if not isinstance(item, dict):
+                continue
+
+            comments.append(
+                {
+                    "id": str(item.get("id") or ""),
+                    "author": self._user_value(item.get("author")),
+                    "created": str(item.get("created") or ""),
+                    "updated": str(item.get("updated") or ""),
+                    "body": adf_to_text(item.get("body")),
+                }
+            )
+
+        return comments
+
+    def _issue_links(self, value: object) -> list[dict[str, str]]:
+        if not isinstance(value, list):
+            return []
+
+        links = []
+
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+
+            link_type = item.get("type", {})
+            linked_issue = item.get("outwardIssue") or item.get("inwardIssue") or {}
+
+            if not isinstance(linked_issue, dict):
+                continue
+
+            fields = linked_issue.get("fields", {})
+            fields = fields if isinstance(fields, dict) else {}
+            links.append(
+                {
+                    "type": self._named_value(link_type),
+                    "key": str(linked_issue.get("key") or ""),
+                    "summary": str(fields.get("summary") or ""),
+                    "status": self._named_value(fields.get("status")),
+                }
+            )
+
+        return links

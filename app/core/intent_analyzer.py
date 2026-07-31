@@ -32,6 +32,30 @@ class IntentAnalyzer:
                 metadata={"query": text},
             )
 
+        if self._looks_like_test_task_strategy(normalized, issue_key):
+            return UserIntent(
+                name="test_task_strategy",
+                raw_text=text,
+                expected_output="test_strategy",
+                confidence=0.9,
+                metadata={
+                    "issue_key": issue_key,
+                    "query": self._test_task_strategy_query(text),
+                },
+            )
+
+        if self._looks_like_prepare_task(normalized, issue_key):
+            return UserIntent(
+                name="prepare_task",
+                raw_text=text,
+                expected_output="task_preparation",
+                confidence=0.9,
+                metadata={
+                    "issue_key": issue_key,
+                    "query": self._prepare_task_query(text),
+                },
+            )
+
         if (
             self._looks_like_memory_write(normalized)
             or request.metadata.get("action") == "memory.write"
@@ -356,6 +380,104 @@ class IntentAnalyzer:
                 "save this",
             )
         )
+
+    def _looks_like_prepare_task(self, normalized: str, issue_key: str) -> bool:
+        if "дейли" in normalized or "daily" in normalized:
+            return False
+
+        prepare_markers = (
+            "подготовь",
+            "подготовиться",
+            "подготовить",
+            "prepare ",
+            "help me prepare",
+        )
+        task_markers = (
+            "задач",
+            "таск",
+            "task",
+            "issue",
+        )
+
+        if issue_key and any(marker in normalized for marker in prepare_markers):
+            return True
+
+        return (
+            any(marker in normalized for marker in prepare_markers)
+            and any(marker in normalized for marker in task_markers)
+        )
+
+    def _looks_like_test_task_strategy(
+        self,
+        normalized: str,
+        issue_key: str,
+    ) -> bool:
+        if "дейли" in normalized or "daily" in normalized:
+            return False
+
+        test_markers = (
+            "помоги протестировать",
+            "как протестировать",
+            "как тестировать",
+            "протестировать",
+            "тестировать",
+            "стратегия тестирования",
+            "test strategy",
+            "help me test",
+            "how to test",
+        )
+        task_markers = (
+            "задач",
+            "таск",
+            "task",
+            "issue",
+        )
+
+        if issue_key and any(marker in normalized for marker in test_markers):
+            return True
+
+        return (
+            any(marker in normalized for marker in test_markers)
+            and any(marker in normalized for marker in task_markers)
+        )
+
+    def _test_task_strategy_query(self, text: str) -> str:
+        stripped = text.strip()
+
+        for marker in [
+            "Помоги протестировать",
+            "помоги протестировать",
+            "Как протестировать",
+            "как протестировать",
+            "Как тестировать",
+            "как тестировать",
+            "Help me test",
+            "help me test",
+            "How to test",
+            "how to test",
+        ]:
+            if stripped.startswith(marker):
+                return stripped[len(marker) :].strip()
+
+        return stripped
+
+    def _prepare_task_query(self, text: str) -> str:
+        stripped = text.strip()
+
+        for marker in [
+            "Подготовь меня к задаче",
+            "подготовь меня к задаче",
+            "Подготовь меня к",
+            "подготовь меня к",
+            "Подготовиться к задаче",
+            "подготовиться к задаче",
+            "Prepare me for",
+            "prepare me for",
+        ]:
+            if stripped.startswith(marker):
+                return stripped[len(marker) :].strip()
+
+        return stripped
 
     def _memory_content(self, text: str) -> str:
         stripped = text.strip()

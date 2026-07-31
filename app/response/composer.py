@@ -1,3 +1,5 @@
+import re
+
 from app.core.artifacts import Artifact, PipelineTrace
 from app.core.intent import UserIntent
 from app.core.models import OrchestratorResponse, UserRequest
@@ -21,7 +23,7 @@ class ResponseComposer:
         message = (
             self._compose_generated_response(llm_artifact, artifacts)
             if llm_artifact
-            else self._compose_service_response(artifacts)
+            else self._compose_service_response(intent, artifacts)
         )
 
         return OrchestratorResponse(
@@ -41,9 +43,19 @@ class ResponseComposer:
             },
         )
 
-    def _compose_service_response(self, artifacts: list[Artifact]) -> str:
+    def _compose_service_response(
+        self,
+        intent: UserIntent,
+        artifacts: list[Artifact],
+    ) -> str:
         if not artifacts:
             return "No service artifacts were produced."
+
+        if intent.name == "test_task_strategy":
+            return self._compose_test_strategy_response(intent, artifacts)
+
+        if intent.name == "prepare_task":
+            return self._compose_task_preparation_response(intent, artifacts)
 
         if len(artifacts) == 1 and artifacts[0].source == "Memory Service":
             return self._compose_memory_response(artifacts[0])
@@ -282,6 +294,783 @@ class ResponseComposer:
             lines.append(f"{index}. {document['title']} — {document['path']}")
 
         return "\n".join(lines)
+
+    def _compose_task_preparation_response(
+        self,
+        intent: UserIntent,
+        artifacts: list[Artifact],
+    ) -> str:
+        jira_issue = self._artifact_named(artifacts, "jira_issue")
+        jira_error = self._artifact_named(artifacts, "jira_error")
+        search_artifact = self._artifact_named(artifacts, "memory_search_results")
+        skill_artifact = self._artifact_named(artifacts, "skill_guidance")
+        issue = jira_issue.metadata.get("issue", {}) if jira_issue else {}
+        sources = search_artifact.metadata.get("results", []) if search_artifact else []
+        comments = issue.get("comments", [])
+        links = issue.get("links", [])
+        blockers = self._task_start_blockers(issue, sources, jira_error)
+        risks = self._task_risks(issue, sources, comments)
+        next_action = self._task_next_best_action(issue, blockers, sources, comments)
+        issue_key = issue.get("key") or intent.metadata.get("issue_key") or ""
+
+        lines = [
+            (
+                f"Я подготовил задачу {issue_key}."
+                if issue_key
+                else "Подготовка завершена."
+            ),
+            "",
+            "Главное",
+        ]
+        lines.extend(self._task_headline_lines(intent, issue, jira_error, sources))
+        lines.extend(["", "На что обратить внимание"])
+        lines.extend(risks)
+        lines.extend(["", "Следующий лучший шаг"])
+        lines.append(f"• {next_action}")
+        lines.extend(["", "Что изменилось"])
+        lines.extend(self._task_change_lines(issue, comments))
+        lines.extend(["", "Что мешает начать"])
+        lines.extend(blockers)
+        lines.extend(["", "Facts"])
+        lines.extend(self._task_fact_lines(issue, sources, comments, links, jira_error))
+        lines.extend(["", "Inferences"])
+        lines.extend(self._task_inference_lines(issue, sources, comments, skill_artifact))
+        lines.extend(["", "Recommendations"])
+        lines.extend(self._task_recommendation_lines(issue, blockers, sources, comments))
+        lines.extend(["", "Предлагаемые действия"])
+        lines.extend(
+            [
+                "• [ ] Принять следующий шаг.",
+                "• [ ] Подготовить тестовый чек-лист после проверки вводных.",
+                "• [ ] Сохранить подтверждённые выводы в Obsidian.",
+                "• [ ] Ничего не делать сейчас.",
+                "",
+                "Я ничего не сохранял и не изменял без подтверждения.",
+            ]
+        )
+
+        return "\n".join(lines)
+
+    def _compose_test_strategy_response(
+        self,
+        intent: UserIntent,
+        artifacts: list[Artifact],
+    ) -> str:
+        jira_issue = self._artifact_named(artifacts, "jira_issue")
+        jira_error = self._artifact_named(artifacts, "jira_error")
+        search_artifact = self._artifact_named(artifacts, "memory_search_results")
+        skill_artifact = self._artifact_named(artifacts, "skill_guidance")
+        issue = jira_issue.metadata.get("issue", {}) if jira_issue else {}
+        sources = search_artifact.metadata.get("results", []) if search_artifact else []
+        comments = issue.get("comments", [])
+        issue_key = issue.get("key") or intent.metadata.get("issue_key") or ""
+        areas = self._risk_areas(issue, sources, comments)
+
+        lines = [
+            (
+                f"Продолжаю по {issue_key}: стратегия тестирования."
+                if issue_key
+                else "Продолжаю: стратегия тестирования."
+            ),
+            "",
+            "Коротко",
+        ]
+        lines.extend(
+            self._test_strategy_summary_lines(
+                intent=intent,
+                issue=issue,
+                jira_error=jira_error,
+                sources=sources,
+                areas=areas,
+            )
+        )
+        lines.extend(["", "Что проверить в первую очередь"])
+        lines.extend(self._test_strategy_priority_lines(issue, sources, comments, areas))
+        lines.extend(["", "Основные пользовательские сценарии"])
+        lines.extend(self._test_strategy_user_scenario_lines(issue, sources, comments))
+        lines.extend(["", "Негативные проверки"])
+        lines.extend(self._test_strategy_negative_lines(issue, sources, comments))
+        lines.extend(["", "Граничные случаи"])
+        lines.extend(self._test_strategy_boundary_lines(issue, sources, comments))
+        lines.extend(["", "Возможные регрессии"])
+        lines.extend(self._test_strategy_regression_lines(issue, sources, comments, areas))
+        lines.extend(["", "Что пока неизвестно"])
+        lines.extend(
+            self._test_strategy_unknown_lines(
+                issue=issue,
+                jira_error=jira_error,
+                sources=sources,
+                comments=comments,
+            )
+        )
+        lines.extend(["", "Основано на"])
+        lines.extend(
+            self._test_strategy_evidence_lines(
+                jira_issue=jira_issue,
+                jira_error=jira_error,
+                sources=sources,
+                skill_artifact=skill_artifact,
+            )
+        )
+        lines.extend(
+            [
+                "",
+                "Это не полный чек-лист. Это направление тестирования, чтобы начать спокойно и осознанно.",
+                "Я ничего не сохранял и не изменял без подтверждения.",
+            ]
+        )
+
+        return "\n".join(lines)
+
+    def _test_strategy_summary_lines(
+        self,
+        intent: UserIntent,
+        issue: dict,
+        jira_error: Artifact | None,
+        sources: list[dict],
+        areas: list[str],
+    ) -> list[str]:
+        if issue:
+            summary = issue.get("summary") or intent.raw_text
+            lines = [f"• Фокус задачи: {summary}."]
+        elif jira_error:
+            lines = [
+                "• Jira-контекст недоступен, поэтому стратегия основана "
+                "на локальных знаниях и названии задачи."
+            ]
+        else:
+            lines = [f"• Фокус взят из запроса: {intent.raw_text}."]
+
+        if areas:
+            lines.append(f"• Основные зоны внимания: {', '.join(areas[:4])}.")
+
+        if sources:
+            lines.append(
+                "• Локальная память добавляет контекст: "
+                f"{self._source_titles(sources[:2])}."
+            )
+
+        return lines
+
+    def _test_strategy_priority_lines(
+        self,
+        issue: dict,
+        sources: list[dict],
+        comments: list[dict],
+        areas: list[str],
+    ) -> list[str]:
+        lines = []
+
+        if comments:
+            meaning = self._comment_meaning(str(comments[-1].get("body") or ""))
+
+            if meaning:
+                lines.append(f"• Сначала проверить уточнение из последнего комментария: {meaning}")
+            else:
+                excerpt = self._safe_comment_excerpt(str(comments[-1].get("body") or ""))
+                lines.append(
+                    f"• Сначала проверить последний комментарий: {excerpt}"
+                    if excerpt
+                    else "• Сначала прочитать последний комментарий перед чек-листом."
+                )
+
+        next_step_prefix = "Затем" if lines else "Сначала"
+
+        if areas:
+            lines.append(f"• {next_step_prefix} пройти основной поток: {areas[0]}.")
+        elif issue.get("summary"):
+            lines.append(
+                f"• {next_step_prefix} пройти happy path для: "
+                f"{issue.get('summary')}."
+            )
+        else:
+            lines.append(f"• {next_step_prefix} восстановить основной happy path задачи.")
+
+        if sources:
+            lines.append("• После этого сверить тестовый фокус с найденными заметками Obsidian.")
+
+        return lines[:4]
+
+    def _test_strategy_user_scenario_lines(
+        self,
+        issue: dict,
+        sources: list[dict],
+        comments: list[dict],
+    ) -> list[str]:
+        text = self._strategy_text(issue, sources, comments)
+        scenarios = []
+
+        if self._contains_any(text, ["registration", "signup", "sign up", "регистрац"]):
+            scenarios.append("• Пользователь успешно проходит регистрацию от начала до конца.")
+
+        if self._contains_any(text, ["email", "e-mail", "почт", "confirmation"]):
+            scenarios.append("• Пользователь подтверждает email и получает ожидаемый доступ.")
+
+        if self._contains_any(text, ["login", "sign in", "логин", "авторизац"]):
+            scenarios.append("• Пользователь входит после выполнения нового сценария.")
+
+        if self._contains_any(text, ["restore", "reset", "forgot", "восстанов"]):
+            scenarios.append("• Пользователь восстанавливает доступ после изменения.")
+
+        if self._contains_any(text, ["api", "endpoint", "request", "response"]):
+            scenarios.append("• Клиент получает корректный API-ответ для успешного запроса.")
+
+        if not scenarios:
+            scenarios.append("• Основной пользовательский путь из описания задачи.")
+            scenarios.append("• Повторное выполнение сценария без неожиданных побочных эффектов.")
+
+        return scenarios[:5]
+
+    def _test_strategy_negative_lines(
+        self,
+        issue: dict,
+        sources: list[dict],
+        comments: list[dict],
+    ) -> list[str]:
+        text = self._strategy_text(issue, sources, comments)
+        checks = []
+
+        if self._contains_any(text, ["registration", "signup", "sign up", "регистрац"]):
+            checks.append("• Попытка регистрации с уже занятым email.")
+            checks.append("• Регистрация с незаполненными обязательными полями.")
+
+        if self._contains_any(text, ["email", "e-mail", "почт", "confirmation"]):
+            checks.append("• Подтверждение email с недействительной или просроченной ссылкой.")
+
+        if self._contains_any(text, ["password", "парол"]):
+            checks.append("• Пароль не соответствует правилам сложности.")
+
+        if self._contains_any(text, ["api", "endpoint", "request", "response"]):
+            checks.append("• Некорректный запрос возвращает понятную ошибку без побочных действий.")
+
+        if not checks:
+            checks.append("• Невалидные обязательные данные не должны приводить к успешному сценарию.")
+            checks.append("• Ошибка сервиса должна быть понятной и не ломать состояние пользователя.")
+
+        return checks[:5]
+
+    def _test_strategy_boundary_lines(
+        self,
+        issue: dict,
+        sources: list[dict],
+        comments: list[dict],
+    ) -> list[str]:
+        text = self._strategy_text(issue, sources, comments)
+        checks = []
+
+        if self._contains_any(text, ["email", "e-mail", "почт"]):
+            checks.append("• Минимальная и длинная допустимая длина email.")
+            checks.append("• Email с допустимыми спецсимволами и разным регистром.")
+
+        if self._contains_any(text, ["password", "парол"]):
+            checks.append("• Минимальная и максимальная длина пароля.")
+            checks.append("• Пароль на границе правил сложности.")
+
+        if self._contains_any(text, ["timeout", "expire", "expires", "просроч"]):
+            checks.append("• Действие сразу до и сразу после истечения срока.")
+
+        if not checks:
+            checks.append("• Границы пока неочевидны: нужны правила валидации или ограничения данных.")
+
+        return checks[:5]
+
+    def _test_strategy_regression_lines(
+        self,
+        issue: dict,
+        sources: list[dict],
+        comments: list[dict],
+        areas: list[str],
+    ) -> list[str]:
+        if areas:
+            return [f"• Проверить, что не сломались: {', '.join(areas[:4])}."]
+
+        text = self._strategy_text(issue, sources, comments)
+        regressions = []
+
+        if self._contains_any(text, ["user", "пользователь"]):
+            regressions.append("• Существующий пользовательский путь остаётся рабочим.")
+
+        if self._contains_any(text, ["permission", "role", "роль", "доступ"]):
+            regressions.append("• Права доступа и роли не изменились неожиданно.")
+
+        if not regressions:
+            regressions.append("• Ближайшие соседние сценарии вокруг изменённой функции.")
+
+        return regressions[:4]
+
+    def _test_strategy_unknown_lines(
+        self,
+        issue: dict,
+        jira_error: Artifact | None,
+        sources: list[dict],
+        comments: list[dict],
+    ) -> list[str]:
+        unknowns = []
+        description = str(issue.get("description") or "")
+
+        if jira_error:
+            unknowns.append("• Нет актуального Jira-описания и комментариев.")
+
+        if issue and not description:
+            unknowns.append("• В задаче нет описания.")
+
+        if issue and description and not self._has_acceptance_criteria(description):
+            unknowns.append("• Acceptance Criteria не выделены явно.")
+
+        if not comments:
+            unknowns.append("• Нет комментариев, которые уточняют последние решения.")
+
+        if not sources:
+            unknowns.append("• Нет локальных заметок Obsidian по этой задаче.")
+
+        return unknowns or ["• Критичных неизвестных по собранным источникам не видно."]
+
+    def _test_strategy_evidence_lines(
+        self,
+        jira_issue: Artifact | None,
+        jira_error: Artifact | None,
+        sources: list[dict],
+        skill_artifact: Artifact | None,
+    ) -> list[str]:
+        lines = []
+
+        if jira_issue:
+            issue = jira_issue.metadata.get("issue", {})
+            lines.append(f"• Jira: {issue.get('key') or 'задача'} получена.")
+        elif jira_error:
+            lines.append(f"• Jira: {self._jira_error_summary(jira_error)}")
+
+        if sources:
+            lines.append(f"• Obsidian: {self._source_titles(sources[:3])}.")
+
+        if skill_artifact:
+            lines.append("• QA guidance: анализ функциональности и рисков.")
+
+        return lines
+
+    def _task_headline_lines(
+        self,
+        intent: UserIntent,
+        issue: dict,
+        jira_error: Artifact | None,
+        sources: list[dict],
+    ) -> list[str]:
+        lines = []
+        issue_key = issue.get("key") or intent.metadata.get("issue_key") or "задача"
+
+        if issue:
+            summary = issue.get("summary") or "summary не указан"
+            lines.append(f"• Вы будете разбирать: {summary}.")
+            lines.append(self._task_work_state_line(issue))
+        elif jira_error:
+            lines.append(
+                f"• Jira-контекст для {issue_key} не получен: "
+                f"{self._jira_error_summary(jira_error)}"
+            )
+        else:
+            lines.append(f"• Готовлю контекст по запросу: {intent.raw_text}")
+
+        if sources:
+            source_titles = ", ".join(
+                result["document"]["title"]
+                for result in sources[:2]
+            )
+            lines.append(f"• В Obsidian есть локальный контекст: {source_titles}.")
+        else:
+            lines.append("• Локальных знаний по этой теме пока не найдено.")
+
+        return lines
+
+    def _task_change_lines(self, issue: dict, comments: list[dict]) -> list[str]:
+        if comments:
+            latest = comments[-1]
+            meaning = self._comment_meaning(str(latest.get("body") or ""))
+
+            if meaning:
+                return [f"• Последний комментарий: {meaning}"]
+
+            excerpt = self._safe_comment_excerpt(str(latest.get("body") or ""))
+
+            if excerpt:
+                return [f"• Последний комментарий: {excerpt}"]
+
+            return ["• Последний комментарий стоит прочитать перед тестированием."]
+
+        if issue:
+            return [
+                "• Новых решений из комментариев по этой задаче не видно."
+            ]
+
+        return ["• Изменения не определены: Jira-контекст недоступен."]
+
+    def _task_start_blockers(
+        self,
+        issue: dict,
+        sources: list[dict],
+        jira_error: Artifact | None,
+    ) -> list[str]:
+        blockers = []
+        description = str(issue.get("description") or "")
+
+        if jira_error:
+            blockers.append("• Нет актуального Jira-контекста.")
+
+        if issue and not description:
+            blockers.append("• В Jira нет описания задачи.")
+
+        if issue and description and not self._has_acceptance_criteria(description):
+            blockers.append("• Acceptance Criteria не выделены явно.")
+
+        return blockers or ["• Явных блокеров по собранным источникам не видно."]
+
+    def _task_risks(
+        self,
+        issue: dict,
+        sources: list[dict],
+        comments: list[dict],
+    ) -> list[str]:
+        risks = []
+        priority = str(issue.get("priority") or "").lower()
+        description = str(issue.get("description") or "")
+        risk_areas = self._risk_areas(issue, sources, comments)
+
+        if priority in {"high", "highest", "critical", "blocker"}:
+            if risk_areas:
+                risks.append(
+                    "• Есть риск регрессии: "
+                    f"{', '.join(risk_areas[:3])}."
+                )
+            else:
+                risks.append(
+                    "• Высокий приоритет: начните с основного пользовательского пути."
+                )
+
+        if issue and not self._has_acceptance_criteria(description):
+            risks.append("• Неявные Acceptance Criteria повышают риск неполного покрытия.")
+
+        if comments:
+            risks.append("• Комментарии могут содержать решения, которые не отражены в описании.")
+
+        if risk_areas and priority not in {"high", "highest", "critical", "blocker"}:
+            risks.append(
+                "• Затронутые области для регрессии: "
+                f"{', '.join(risk_areas[:3])}."
+            )
+
+        return risks or ["• По собранным источникам специфические риски пока не видны."]
+
+    def _task_fact_lines(
+        self,
+        issue: dict,
+        sources: list[dict],
+        comments: list[dict],
+        links: list[dict],
+        jira_error: Artifact | None,
+    ) -> list[str]:
+        facts = []
+
+        if issue:
+            facts.append(f"• Задача: {issue.get('summary') or issue.get('key')}")
+
+            if issue.get("status"):
+                facts.append(f"• Текущий статус: {issue.get('status')}")
+
+            if issue.get("priority") and issue.get("priority") != "Unavailable":
+                facts.append(f"• Приоритет: {issue.get('priority')}")
+
+            if issue.get("description"):
+                facts.append("• Описание задачи доступно.")
+
+        if jira_error:
+            facts.append(f"• Jira: {self._jira_error_summary(jira_error)}")
+
+        if comments:
+            facts.append(
+                "• В задаче есть комментарии, которые могут менять тестовый фокус."
+            )
+
+        if links:
+            linked = ", ".join(
+                link.get("key", "")
+                for link in links[:3]
+                if link.get("key")
+            )
+            if linked:
+                facts.append(f"• Есть связанные задачи: {linked}.")
+
+        for result in sources[:3]:
+            document = result["document"]
+            facts.append(
+                f"• Источник из Obsidian: {document['title']} "
+                f"({document['path']})"
+            )
+
+        return facts or ["• Полезных фактов для решения пока не собрано."]
+
+    def _task_inference_lines(
+        self,
+        issue: dict,
+        sources: list[dict],
+        comments: list[dict],
+        skill_artifact: Artifact | None,
+    ) -> list[str]:
+        inferences = []
+        description = str(issue.get("description") or "")
+
+        if issue and not self._has_acceptance_criteria(description):
+            inferences.append(
+                "• Перед качественным тестированием стоит уточнить ожидаемое поведение."
+            )
+
+        if comments:
+            inferences.append(
+                "• Комментарии стоит прочитать до чек-листа: там могут быть новые решения."
+            )
+
+        if sources:
+            inferences.append(
+                "• Локальный контекст может подсказать связанные проверки и прошлые решения."
+            )
+
+        if skill_artifact:
+            inferences.append(
+                "• QA guidance подходит для следующего шага: тестового фокуса."
+            )
+
+        return inferences or ["• Пока недостаточно данных для уверенных выводов."]
+
+    def _task_recommendation_lines(
+        self,
+        issue: dict,
+        blockers: list[str],
+        sources: list[dict],
+        comments: list[dict],
+    ) -> list[str]:
+        recommendations = []
+
+        if comments:
+            recommendations.append(
+                "Сначала прочитать последние комментарии и вынести решения."
+            )
+
+        if any("Acceptance Criteria" in blocker for blocker in blockers):
+            recommendations.append("Уточнить Acceptance Criteria до финального чек-листа.")
+
+        risk_areas = self._risk_areas(issue, sources, comments)
+
+        if risk_areas:
+            recommendations.append(
+                "Проверить регрессию в областях: "
+                f"{', '.join(risk_areas[:3])}."
+            )
+
+        if sources:
+            recommendations.append(
+                "Использовать найденные заметки как основу тестового фокуса."
+            )
+
+        recommendations.append("После проверки вводных подготовить короткий чек-лист.")
+
+        return [
+            f"{index}. {recommendation}"
+            for index, recommendation in enumerate(recommendations, start=1)
+        ]
+
+    def _task_next_best_action(
+        self,
+        issue: dict,
+        blockers: list[str],
+        sources: list[dict],
+        comments: list[dict],
+    ) -> str:
+        if any("Jira-контекста" in blocker for blocker in blockers):
+            return "Сначала восстановить актуальный Jira-контекст или проверить Jira-настройки."
+
+        if any("Acceptance Criteria" in blocker for blocker in blockers):
+            return "Сначала уточнить Acceptance Criteria, затем переходить к чек-листу."
+
+        if comments:
+            meaning = self._comment_meaning(str(comments[-1].get("body") or ""))
+
+            if meaning:
+                return f"Сначала проверьте решение из последнего комментария: {meaning}"
+
+            return "Сначала прочитайте последние комментарии и вынесите решения в тестовый фокус."
+
+        if sources:
+            return "Сначала прочитать найденные знания, затем составить тестовый чек-лист."
+
+        if issue and issue.get("description"):
+            return "Начать с описания задачи и сразу выделить основной happy path."
+
+        return "Начать с короткого уточнения у разработчика и после этого собрать чек-лист."
+
+    def _jira_error_summary(self, jira_error: Artifact) -> str:
+        content = " ".join(str(jira_error.content).split())
+
+        if "Jira is not configured" in content:
+            return "подключение к Jira не настроено."
+
+        return content
+
+    def _safe_comment_excerpt(self, text: str, limit: int = 140) -> str:
+        excerpt = " ".join(text.split())
+
+        if not excerpt:
+            return ""
+
+        excerpt = re.sub(r"https?://\S+", "[link]", excerpt)
+        excerpt = re.sub(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b", "[email]", excerpt)
+        excerpt = re.sub(r"\b[A-Za-z0-9_-]{24,}\b", "[secret]", excerpt)
+
+        if len(excerpt) <= limit:
+            return excerpt
+
+        return f"{excerpt[: limit - 1].rstrip()}…"
+
+    def _strategy_text(
+        self,
+        issue: dict,
+        sources: list[dict],
+        comments: list[dict],
+    ) -> str:
+        chunks = [
+            str(issue.get("summary") or ""),
+            str(issue.get("description") or ""),
+        ]
+        chunks.extend(str(comment.get("body") or "") for comment in comments)
+
+        for result in sources:
+            document = result.get("document", {})
+            chunks.append(str(document.get("title") or ""))
+            chunks.append(str(document.get("path") or ""))
+            chunks.extend(str(tag) for tag in document.get("tags", []))
+            chunks.extend(str(heading) for heading in document.get("headings", []))
+
+        return " ".join(chunks).lower()
+
+    def _contains_any(self, text: str, markers: list[str]) -> bool:
+        return any(marker in text for marker in markers)
+
+    def _source_titles(self, sources: list[dict]) -> str:
+        titles = [
+            str(result.get("document", {}).get("title") or "").strip()
+            for result in sources
+        ]
+        visible_titles = [title for title in titles if title]
+
+        return ", ".join(visible_titles) if visible_titles else "без названия"
+
+    def _task_work_state_line(self, issue: dict) -> str:
+        status = str(issue.get("status") or "").strip()
+        priority = str(issue.get("priority") or "").strip()
+        parts = []
+
+        if status and status != "Unavailable":
+            parts.append(f"статус {status}")
+
+        if priority and priority != "Unavailable":
+            parts.append(f"приоритет {priority}")
+
+        if not parts:
+            return "• Jira не дала статуса или приоритета, поэтому фокус нужно определить по описанию."
+
+        return f"• Рабочее состояние: {', '.join(parts)}."
+
+    def _comment_meaning(self, text: str) -> str:
+        normalized = text.lower()
+
+        if not normalized.strip():
+            return ""
+
+        patterns = [
+            (
+                ["email", "e-mail", "почт", "подтвержден", "подтверждён", "confirmation"],
+                "уточнена логика подтверждения email.",
+            ),
+            (
+                ["password", "парол", "символ", "длин", "complexity"],
+                "уточнены ограничения пароля.",
+            ),
+            (
+                ["registration", "регистрац", "signup", "sign up"],
+                "уточнён сценарий регистрации.",
+            ),
+            (
+                ["login", "логин", "авторизац", "sign in"],
+                "затронут вход пользователя.",
+            ),
+            (
+                ["restore", "reset", "forgot", "восстанов"],
+                "затронуто восстановление доступа.",
+            ),
+            (
+                ["api", "endpoint", "request", "response"],
+                "есть уточнение по API-поведению.",
+            ),
+            (
+                ["error", "ошиб", "validation", "валидац"],
+                "уточнена обработка ошибок или валидации.",
+            ),
+        ]
+
+        for markers, meaning in patterns:
+            if any(marker in normalized for marker in markers):
+                return meaning
+
+        return ""
+
+    def _risk_areas(
+        self,
+        issue: dict,
+        sources: list[dict],
+        comments: list[dict],
+    ) -> list[str]:
+        texts = [
+            str(issue.get("summary") or ""),
+            str(issue.get("description") or ""),
+        ]
+        texts.extend(str(comment.get("body") or "") for comment in comments)
+
+        for result in sources:
+            document = result.get("document", {})
+            texts.append(str(document.get("title") or ""))
+            texts.append(str(document.get("path") or ""))
+            texts.extend(str(tag) for tag in document.get("tags", []))
+            texts.extend(str(heading) for heading in document.get("headings", []))
+
+        normalized = " ".join(texts).lower()
+        candidates = [
+            ("регистрация", ["registration", "signup", "sign up", "регистрац"]),
+            ("логин", ["login", "sign in", "логин", "авторизац"]),
+            ("подтверждение email", ["email", "e-mail", "почт", "confirmation"]),
+            ("восстановление пароля", ["restore", "reset", "forgot", "восстанов"]),
+            ("валидация формы", ["validation", "валидац", "form", "форма"]),
+            ("API-контракт", ["api", "endpoint", "request", "response"]),
+        ]
+        areas = []
+
+        for label, markers in candidates:
+            if any(marker in normalized for marker in markers):
+                areas.append(label)
+
+        return areas
+
+    def _has_acceptance_criteria(self, text: str) -> bool:
+        normalized = text.lower()
+
+        return any(
+            marker in normalized
+            for marker in [
+                "acceptance criteria",
+                "acceptance",
+                "criteria",
+                "ac:",
+                "критерии приемки",
+                "критерии приёмки",
+                "критерии",
+            ]
+        )
 
     def _source_group(self, document: dict) -> str:
         path = str(document.get("path", "")).lower()

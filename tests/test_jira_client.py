@@ -98,6 +98,8 @@ class JiraClientTest(unittest.TestCase):
             adf_to_text(issue["fields"]["description"]),
             "Steps to reproduce",
         )
+        _, kwargs = self.session.get.call_args
+        self.assertIn("updated", kwargs["params"]["fields"])
 
     def test_assigned_issues_uses_jql_search(self):
         self.session.get.return_value = FakeResponse(

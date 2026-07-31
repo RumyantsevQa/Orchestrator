@@ -45,6 +45,90 @@ class TaskPlanner:
         )
 
     def _desired_steps(self, intent: UserIntent) -> list[PlanStep]:
+        if intent.name == "test_task_strategy":
+            steps = []
+            issue_key = intent.metadata.get("issue_key", "")
+            query = issue_key or intent.metadata.get("query", intent.raw_text)
+
+            if issue_key:
+                steps.append(
+                    PlanStep(
+                        id="collect_jira_task_for_test_strategy",
+                        component="Jira Service",
+                        capability="jira.get_issue",
+                        phase="collect",
+                        description="Read the Jira task before building a test strategy.",
+                        parameters={"issue_key": issue_key},
+                    )
+                )
+
+            steps.extend(
+                [
+                    PlanStep(
+                        id="search_task_memory_for_test_strategy",
+                        component="Memory Service",
+                        capability="memory.search",
+                        phase="collect",
+                        description="Find local knowledge for the test strategy.",
+                        parameters={
+                            "query": query,
+                            "limit": 5,
+                        },
+                    ),
+                    PlanStep(
+                        id="apply_feature_analysis_skill_for_test_strategy",
+                        component="Skill Service",
+                        capability="skill.analyze_feature",
+                        phase="collect",
+                        description="Apply QA feature analysis guidance.",
+                    ),
+                ]
+            )
+
+            return steps
+
+        if intent.name == "prepare_task":
+            steps = []
+            issue_key = intent.metadata.get("issue_key", "")
+            query = issue_key or intent.metadata.get("query", intent.raw_text)
+
+            if issue_key:
+                steps.append(
+                    PlanStep(
+                        id="collect_jira_task",
+                        component="Jira Service",
+                        capability="jira.get_issue",
+                        phase="collect",
+                        description="Read the Jira task for preparation.",
+                        parameters={"issue_key": issue_key},
+                    )
+                )
+
+            steps.extend(
+                [
+                    PlanStep(
+                        id="search_task_memory",
+                        component="Memory Service",
+                        capability="memory.search",
+                        phase="collect",
+                        description="Find local knowledge for the task.",
+                        parameters={
+                            "query": query,
+                            "limit": 5,
+                        },
+                    ),
+                    PlanStep(
+                        id="apply_feature_analysis_skill",
+                        component="Skill Service",
+                        capability="skill.analyze_feature",
+                        phase="collect",
+                        description="Apply QA feature analysis guidance.",
+                    ),
+                ]
+            )
+
+            return steps
+
         if intent.name == "knowledge_update":
             return [
                 PlanStep(

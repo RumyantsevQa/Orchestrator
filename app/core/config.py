@@ -11,6 +11,7 @@ class Settings:
 
     memory_vault_path: str = "knowledge"
     document_index_path: str = ".qaskills/document_index.json"
+    personal_seen_state_path: str = ".qaskills/personal_seen_state.json"
     provider_policy: str = "AUTO"
     local_llm_base_url: str = "http://localhost:1234/v1"
     local_llm_model: str = ""
@@ -38,6 +39,10 @@ def load_settings() -> Settings:
         document_index_path=os.getenv(
             "QASKILLS_DOCUMENT_INDEX_PATH",
             Settings.document_index_path,
+        ),
+        personal_seen_state_path=os.getenv(
+            "QASKILLS_PERSONAL_SEEN_STATE_PATH",
+            Settings.personal_seen_state_path,
         ),
         provider_policy=os.getenv(
             "QASKILLS_PROVIDER_POLICY",

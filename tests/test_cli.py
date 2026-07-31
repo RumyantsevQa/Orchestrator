@@ -54,6 +54,12 @@ class CliReleaseCandidateTest(unittest.TestCase):
         self.env = {
             "QASKILLS_MEMORY_VAULT_PATH": str(self.vault),
             "QASKILLS_DOCUMENT_INDEX_PATH": str(self.index_path),
+            "QASKILLS_PERSONAL_SEEN_STATE_PATH": str(
+                self.root / "personal_seen_state.json"
+            ),
+            "JIRA_URL": "",
+            "JIRA_EMAIL": "",
+            "JIRA_API_TOKEN": "",
         }
 
     def tearDown(self):
@@ -170,6 +176,39 @@ class CliReleaseCandidateTest(unittest.TestCase):
         self.assertIn("Memory Service", output)
         self.assertIn("Jira Service", output)
         self.assertIn("Live Jira data is not connected", output)
+
+    def test_natural_language_prepare_task_is_available_without_new_command(self):
+        (self.vault / "Projects" / "SCRUM-7.md").write_text(
+            "# SCRUM-7 Registration\n\n## Test ideas\n\nCheck login regression.",
+            encoding="utf-8",
+        )
+
+        code, output = self.run_cli("Подготовь", "меня", "к", "SCRUM-7")
+
+        self.assertEqual(code, 0)
+        self.assertIn("Я подготовил задачу SCRUM-7.", output)
+        self.assertIn("Главное", output)
+        self.assertIn("На что обратить внимание", output)
+        self.assertIn("Следующий лучший шаг", output)
+        self.assertIn("Я ничего не сохранял", output)
+
+    def test_natural_language_test_task_strategy_is_available_without_new_command(self):
+        (self.vault / "Projects" / "SCRUM-7.md").write_text(
+            "# SCRUM-7 Registration\n\n## Test ideas\n\nCheck login regression.",
+            encoding="utf-8",
+        )
+
+        code, output = self.run_cli("Помоги", "протестировать", "SCRUM-7")
+
+        self.assertEqual(code, 0)
+        self.assertIn("Продолжаю по SCRUM-7: стратегия тестирования.", output)
+        self.assertIn("Что проверить в первую очередь", output)
+        self.assertIn("Основные пользовательские сценарии", output)
+        self.assertIn("Негативные проверки", output)
+        self.assertIn("Граничные случаи", output)
+        self.assertIn("Возможные регрессии", output)
+        self.assertIn("Что пока неизвестно", output)
+        self.assertIn("Это не полный чек-лист", output)
 
     @patch("main.Orchestrator")
     def test_prepare_daily_uses_unified_pipeline_action(self, orchestrator_cls):

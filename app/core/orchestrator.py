@@ -12,6 +12,12 @@ from app.prompt.prompt_builder import PromptBuilder
 from app.providers.router import ProviderRouter
 from app.response.composer import ResponseComposer
 from app.services.jira_client import JiraCredentials
+from app.work_context import (
+    SeenStateDelta,
+    SeenStateStorage,
+    compare_seen_state,
+    current_jira_issue_state,
+)
 from app.services import (
     ChangeAnalysisService,
     DailyBriefService,
@@ -54,6 +60,9 @@ class Orchestrator:
         self.task_planner = TaskPlanner(self.capabilities)
         self.plan_executor = PlanExecutor(self.services)
         self.response_composer = ResponseComposer()
+        self.seen_state_storage = SeenStateStorage(
+            self.settings.personal_seen_state_path
+        )
 
     def process(self, request: UserRequest) -> OrchestratorResponse:
         trace = PipelineTrace()
@@ -69,6 +78,10 @@ class Orchestrator:
             request=request,
             intent=intent,
             trace=trace,
+        )
+        artifacts = self._with_seen_state_delta(
+            intent=intent,
+            artifacts=artifacts,
         )
 
         llm_artifact = None
@@ -132,3 +145,68 @@ class Orchestrator:
             trace=trace,
             payload={"prompt": prompt_text},
         )
+
+    def _with_seen_state_delta(
+        self,
+        intent: UserIntent,
+        artifacts: list[Artifact],
+    ) -> list[Artifact]:
+        if intent.name not in {"prepare_task", "test_task_strategy"}:
+            return artifacts
+
+        jira_issue = self._artifact_named(artifacts, "jira_issue")
+
+        if not jira_issue:
+            return artifacts
+
+        issue = jira_issue.metadata.get("issue")
+
+        if not isinstance(issue, dict):
+            return artifacts
+
+        try:
+            current = current_jira_issue_state(issue)
+        except ValueError:
+            return artifacts
+
+        previous = self.seen_state_storage.get(
+            source=current.source,
+            entity_type=current.entity_type,
+            entity_id=current.entity_id,
+        )
+
+        if not previous:
+            return artifacts
+
+        delta = compare_seen_state(previous, current)
+
+        return [
+            *artifacts,
+            Artifact(
+                name="work_context_delta",
+                source="Personal Work Context",
+                content=self._delta_content(delta),
+                metadata={"delta": delta.to_dict()},
+            ),
+        ]
+
+    def _delta_content(self, delta: SeenStateDelta) -> str:
+        if delta.has_changes:
+            return (
+                "Personal Seen State delta calculated: "
+                f"{len(delta.field_changes)} field changes, "
+                f"{len(delta.new_comment_ids)} new comments."
+            )
+
+        return "Personal Seen State delta calculated: no changes."
+
+    def _artifact_named(
+        self,
+        artifacts: list[Artifact],
+        name: str,
+    ) -> Artifact | None:
+        for artifact in artifacts:
+            if artifact.name == name:
+                return artifact
+
+        return None

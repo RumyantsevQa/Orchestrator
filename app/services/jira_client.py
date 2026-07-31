@@ -86,7 +86,10 @@ class JiraClient:
         return self._get(
             f"/rest/api/3/issue/{key.strip().upper()}",
             params={
-                "fields": "summary,status,assignee,priority,reporter,description",
+                "fields": (
+                    "summary,status,assignee,priority,reporter,"
+                    "description,comment,issuelinks,updated"
+                ),
             },
         )
 
