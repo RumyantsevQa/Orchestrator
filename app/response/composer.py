@@ -319,9 +319,16 @@ class ResponseComposer:
                 if issue_key
                 else "Подготовка завершена."
             ),
+        ]
+        delta_lines = self._render_work_context_delta(artifacts)
+
+        if delta_lines:
+            lines.extend(["", *delta_lines])
+
+        lines.extend([
             "",
             "Главное",
-        ]
+        ])
         lines.extend(self._task_headline_lines(intent, issue, jira_error, sources))
         lines.extend(["", "На что обратить внимание"])
         lines.extend(risks)
@@ -904,6 +911,80 @@ class ResponseComposer:
             return "Начать с описания задачи и сразу выделить основной happy path."
 
         return "Начать с короткого уточнения у разработчика и после этого собрать чек-лист."
+
+    def _render_work_context_delta(self, artifacts: list[Artifact]) -> list[str]:
+        delta_artifact = self._artifact_named(artifacts, "work_context_delta")
+
+        if not delta_artifact:
+            return []
+
+        delta = delta_artifact.metadata.get("delta")
+
+        if not isinstance(delta, dict) or not delta.get("has_changes"):
+            return []
+
+        lines = []
+        lines.extend(self._work_context_field_change_lines(delta))
+        lines.extend(self._work_context_comment_change_lines(delta))
+
+        if not lines:
+            return []
+
+        return ["Что изменилось с прошлого просмотра", *lines]
+
+    def _work_context_field_change_lines(self, delta: dict) -> list[str]:
+        field_labels = {
+            "status": "Статус",
+            "priority": "Приоритет",
+            "assignee": "Исполнитель",
+        }
+        field_order = {
+            field: index
+            for index, field in enumerate(field_labels)
+        }
+        raw_changes = delta.get("field_changes", [])
+
+        if not isinstance(raw_changes, list):
+            return []
+
+        changes = [
+            change
+            for change in raw_changes
+            if isinstance(change, dict)
+            and change.get("field") in field_labels
+            and self._visible_delta_value(change.get("before"))
+            and self._visible_delta_value(change.get("after"))
+            and self._visible_delta_value(change.get("before"))
+            != self._visible_delta_value(change.get("after"))
+        ]
+        changes.sort(
+            key=lambda change: field_order[str(change.get("field"))]
+        )
+
+        lines = []
+
+        for change in changes:
+            field = str(change.get("field"))
+            before = self._visible_delta_value(change.get("before"))
+            after = self._visible_delta_value(change.get("after"))
+            lines.append(f"• {field_labels[field]}:")
+            lines.append(f"  {before} → {after}")
+
+        return lines
+
+    def _work_context_comment_change_lines(self, delta: dict) -> list[str]:
+        new_comment_ids = delta.get("new_comment_ids", [])
+
+        if not isinstance(new_comment_ids, list) or not new_comment_ids:
+            return []
+
+        if len(new_comment_ids) == 1:
+            return ["• Добавлен новый комментарий"]
+
+        return [f"• Добавлено новых комментариев: {len(new_comment_ids)}"]
+
+    def _visible_delta_value(self, value: object) -> str:
+        return " ".join(str(value or "").split())
 
     def _jira_error_summary(self, jira_error: Artifact) -> str:
         content = " ".join(str(jira_error.content).split())

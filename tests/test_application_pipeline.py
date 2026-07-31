@@ -485,7 +485,7 @@ class ApplicationPipelineTest(unittest.TestCase):
         self.assertIn("Я подготовил задачу SCRUM-7.", response.message)
 
     @patch("app.services.jira.JiraService._live_issue")
-    def test_work_context_delta_keeps_prepare_task_response_byte_for_byte(
+    def test_work_context_delta_changes_only_pre_current_state_section(
         self,
         live_issue,
     ):
@@ -568,9 +568,26 @@ class ApplicationPipelineTest(unittest.TestCase):
                 for artifact in response_with_delta.data["artifacts"]
             )
         )
-        self.assertEqual(
+        self.assertIn(
+            "Что изменилось с прошлого просмотра",
+            response_with_delta.message,
+        )
+        self.assertIn("• Статус:", response_with_delta.message)
+        self.assertIn("  In Progress → Ready for QA", response_with_delta.message)
+        self.assertIn("• Приоритет:", response_with_delta.message)
+        self.assertIn("  Medium → High", response_with_delta.message)
+        self.assertIn("• Добавлен новый комментарий", response_with_delta.message)
+        self.assertLess(
+            response_with_delta.message.index("Что изменилось с прошлого просмотра"),
+            response_with_delta.message.index("Главное"),
+        )
+        self.assertNotEqual(
             response_without_delta.message,
             response_with_delta.message,
+        )
+        self.assertEqual(
+            self._message_from_heading(response_without_delta.message, "Главное"),
+            self._message_from_heading(response_with_delta.message, "Главное"),
         )
 
     def test_natural_language_test_task_returns_strategy_without_llm(self):
@@ -863,6 +880,9 @@ class ApplicationPipelineTest(unittest.TestCase):
             "comments": list(comments or []),
             "links": [],
         }
+
+    def _message_from_heading(self, message: str, heading: str) -> str:
+        return message[message.index(f"{heading}\n"):]
 
 
 if __name__ == "__main__":
