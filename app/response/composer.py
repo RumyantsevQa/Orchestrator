@@ -334,8 +334,9 @@ class ResponseComposer:
         lines.extend(risks)
         lines.extend(["", "Следующий лучший шаг"])
         lines.append(f"• {next_action}")
-        lines.extend(["", "Что изменилось"])
-        lines.extend(self._task_change_lines(issue, comments))
+        if not delta_lines:
+            lines.extend(["", "Что изменилось"])
+            lines.extend(self._task_change_lines(issue, comments))
         lines.extend(["", "Что мешает начать"])
         lines.extend(blockers)
         lines.extend(["", "Facts"])

@@ -175,7 +175,7 @@ class CliReleaseCandidateTest(unittest.TestCase):
         self.assertIn("Jira Issue", output)
         self.assertIn("Memory Service", output)
         self.assertIn("Jira Service", output)
-        self.assertIn("Live Jira data is not connected", output)
+        self.assertIn("Live Jira is not configured", output)
 
     def test_natural_language_prepare_task_is_available_without_new_command(self):
         (self.vault / "Projects" / "SCRUM-7.md").write_text(

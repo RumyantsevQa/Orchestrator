@@ -207,21 +207,61 @@ class JiraService(BaseService):
         )
 
     def _list_my_tasks(self, request: ServiceRequest) -> Artifact:
+        max_results = int(request.payload.get("max_results", 10))
+
+        try:
+            client = self._client()
+            user = client.whoami()
+            issues = client.assigned_issues(max_results=max_results)
+        except JiraConfigurationError:
+            return Artifact(
+                name="jira_workspace",
+                source=self.name,
+                content=(
+                    "Jira workspace is ready.\n"
+                    "Live Jira is not configured. Add JIRA_URL, JIRA_EMAIL, "
+                    "and JIRA_API_TOKEN to use live Jira data.\n"
+                    "Available paths:\n"
+                    "- Find a task by key.\n"
+                    "- Prepare QA analysis for a task.\n"
+                    "- Create a bug report template.\n"
+                    "- Prepare daily notes for a selected task."
+                ),
+                metadata={
+                    "capability": "jira.list_my_tasks",
+                    "connected": False,
+                    "items": [],
+                },
+            )
+        except JiraRequestError as error:
+            return self._error_artifact(error)
+
+        display_name = user.get("displayName") or "Jira user"
+        lines = [f"Live Jira tasks for {display_name}"]
+
+        if not issues:
+            lines.append("No assigned Jira issues were returned.")
+        else:
+            for issue in issues[:max_results]:
+                fields = issue.get("fields", {})
+                fields = fields if isinstance(fields, dict) else {}
+                lines.append(
+                    (
+                        f"- {issue.get('key') or '?'} "
+                        f"{fields.get('summary') or 'Untitled'} "
+                        f"[{self._named_value(fields.get('status'))}, "
+                        f"{self._named_value(fields.get('priority'))}]"
+                    )
+                )
+
         return Artifact(
             name="jira_workspace",
             source=self.name,
-            content=(
-                "Jira workspace is ready, but no live Jira connector is configured.\n"
-                "Available paths:\n"
-                "- Find a task by key.\n"
-                "- Prepare QA analysis for a task.\n"
-                "- Create a bug report template.\n"
-                "- Prepare daily notes for a selected task."
-            ),
+            content="\n".join(lines),
             metadata={
                 "capability": "jira.list_my_tasks",
-                "connected": False,
-                "items": [],
+                "connected": True,
+                "items": issues,
             },
         )
 
@@ -229,19 +269,64 @@ class JiraService(BaseService):
         issue_key = self._issue_key(request)
         title = f"Jira task {issue_key}" if issue_key else "Jira task"
 
+        try:
+            issue = self._client().issue(issue_key)
+        except JiraConfigurationError:
+            return Artifact(
+                name="jira_issue",
+                source=self.name,
+                content=(
+                    f"{title}\n"
+                    "Live Jira is not configured. Add JIRA_URL, JIRA_EMAIL, "
+                    "and JIRA_API_TOKEN to read this task from Jira."
+                ),
+                metadata={
+                    "capability": "jira.find_issue",
+                    "connected": False,
+                    "issue_key": issue_key,
+                },
+            )
+        except JiraRequestError as error:
+            return self._error_artifact(error)
+
+        fields = issue.get("fields", {})
+        description = adf_to_text(fields.get("description"))
+        resolved_key = issue.get("key") or issue_key
+        lines = [
+            f"Jira Issue {resolved_key}",
+            f"Summary: {fields.get('summary') or 'Unavailable'}",
+            f"Status: {self._named_value(fields.get('status'))}",
+            f"Assignee: {self._user_value(fields.get('assignee'), fallback='Unassigned')}",
+            f"Priority: {self._named_value(fields.get('priority'))}",
+            f"Reporter: {self._user_value(fields.get('reporter'))}",
+        ]
+
+        if description:
+            lines.extend(["", "Description:", description])
+
         return Artifact(
             name="jira_issue",
             source=self.name,
-            content=(
-                f"{title}\n"
-                "Live Jira data is not connected in this workspace yet.\n"
-                "QASkills prepared the task boundary and will combine Jira data "
-                "with memory sources when the connector is enabled."
-            ),
+            content="\n".join(lines),
             metadata={
                 "capability": "jira.find_issue",
-                "connected": False,
-                "issue_key": issue_key,
+                "connected": True,
+                "issue_key": resolved_key,
+                "issue": {
+                    "key": resolved_key,
+                    "summary": fields.get("summary") or "",
+                    "updated": str(fields.get("updated") or ""),
+                    "status": self._named_value(fields.get("status")),
+                    "assignee": self._user_value(
+                        fields.get("assignee"),
+                        fallback="Unassigned",
+                    ),
+                    "priority": self._named_value(fields.get("priority")),
+                    "reporter": self._user_value(fields.get("reporter")),
+                    "description": description,
+                    "comments": self._comments(fields.get("comment")),
+                    "links": self._issue_links(fields.get("issuelinks")),
+                },
             },
         )
 

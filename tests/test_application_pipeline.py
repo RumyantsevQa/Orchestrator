@@ -485,7 +485,7 @@ class ApplicationPipelineTest(unittest.TestCase):
         self.assertIn("Я подготовил задачу SCRUM-7.", response.message)
 
     @patch("app.services.jira.JiraService._live_issue")
-    def test_work_context_delta_changes_only_pre_current_state_section(
+    def test_work_context_delta_replaces_legacy_change_section(
         self,
         live_issue,
     ):
@@ -585,10 +585,11 @@ class ApplicationPipelineTest(unittest.TestCase):
             response_without_delta.message,
             response_with_delta.message,
         )
-        self.assertEqual(
-            self._message_from_heading(response_without_delta.message, "Главное"),
-            self._message_from_heading(response_with_delta.message, "Главное"),
-        )
+        self.assertIn("\nЧто изменилось\n", response_without_delta.message)
+        self.assertNotIn("\nЧто изменилось\n", response_with_delta.message)
+        self.assertIn("Главное", response_with_delta.message)
+        self.assertIn("Следующий лучший шаг", response_with_delta.message)
+        self.assertIn("Что мешает начать", response_with_delta.message)
 
     def test_natural_language_test_task_returns_strategy_without_llm(self):
         response = Orchestrator().process(
