@@ -144,6 +144,9 @@ class TaskPlanner:
                 )
             ]
 
+        if intent.name == "working_session_follow_up":
+            return []
+
         if intent.name == "task_analysis":
             return [
                 self._memory_search_step(intent, "search_memory_for_task_analysis"),

@@ -67,6 +67,110 @@ class ApplicationPipelineTest(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        (vault / "QASkills" / "Investigations").mkdir(parents=True)
+        (vault / "QASkills" / "Investigations" / "SCRUM-7 - Registration.md").write_text(
+            "\n".join(
+                [
+                    "# SCRUM-7 - Registration",
+                    "",
+                    "## Evidence",
+                    "",
+                    "- Jira SCRUM-7.",
+                    "",
+                    "## Observations",
+                    "",
+                    "- None yet.",
+                    "",
+                    "## Results",
+                    "",
+                    "- None yet.",
+                    "",
+                    "## Risks",
+                    "",
+                    "- Registration can regress.",
+                    "",
+                    "## Open Questions",
+                    "",
+                    "- Browser scope is unknown.",
+                    "",
+                    "## Test Scope",
+                    "",
+                    "- Refresh after login.",
+                    "- Safari.",
+                    "- Logout from another tab.",
+                    "- Old cookies.",
+                    "",
+                    "## Current Reasoning State",
+                    "",
+                    "Known: registration context exists.",
+                    "",
+                    "Next Step: start with refresh.",
+                    "",
+                    "Stop Point: ready to test refresh.",
+                    "",
+                    "## Reasoning Timeline",
+                    "",
+                    "- 2026-07-31: Investigation prepared.",
+                    "",
+                    "## Stop Point",
+                    "",
+                    "Ready to test refresh.",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (vault / "QASkills" / "Investigations" / "SCRUM-11 - Auth.md").write_text(
+            "\n".join(
+                [
+                    "# SCRUM-11 - Auth",
+                    "",
+                    "## Evidence",
+                    "",
+                    "- Jira SCRUM-11.",
+                    "",
+                    "## Observations",
+                    "",
+                    "- None yet.",
+                    "",
+                    "## Results",
+                    "",
+                    "- None yet.",
+                    "",
+                    "## Risks",
+                    "",
+                    "- Auth can regress.",
+                    "",
+                    "## Open Questions",
+                    "",
+                    "- Build is unknown.",
+                    "",
+                    "## Test Scope",
+                    "",
+                    "- Refresh after login.",
+                    "- Safari.",
+                    "- Logout from another tab.",
+                    "",
+                    "## Current Reasoning State",
+                    "",
+                    "Known: auth context exists.",
+                    "",
+                    "Next Step: start with refresh.",
+                    "",
+                    "Stop Point: ready to test refresh.",
+                    "",
+                    "## Reasoning Timeline",
+                    "",
+                    "- 2026-07-31: Investigation prepared.",
+                    "",
+                    "## Stop Point",
+                    "",
+                    "Ready to test refresh.",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
         os.environ["QASKILLS_MEMORY_VAULT_PATH"] = str(vault)
         os.environ["QASKILLS_DOCUMENT_INDEX_PATH"] = str(vault / "index.json")
         os.environ["QASKILLS_PERSONAL_SEEN_STATE_PATH"] = str(
@@ -606,17 +710,180 @@ class ApplicationPipelineTest(unittest.TestCase):
         self.assertIn("Memory Service", components)
         self.assertIn("Skill Service", components)
         self.assertNotIn("LLM Service", components)
-        self.assertIn(
-            "Продолжаю по SCRUM-7: стратегия тестирования.",
-            response.message,
-        )
-        self.assertIn("Что проверить в первую очередь", response.message)
-        self.assertIn("Основные пользовательские сценарии", response.message)
-        self.assertIn("Негативные проверки", response.message)
-        self.assertIn("Граничные случаи", response.message)
-        self.assertIn("Возможные регрессии", response.message)
-        self.assertIn("Что пока неизвестно", response.message)
+        self.assertIn("SCRUM-7", response.message)
+        self.assertIn("Что известно", response.message)
+        self.assertIn("Что осталось", response.message)
+        self.assertIn("Риски", response.message)
+        self.assertIn("Что делать сейчас", response.message)
         self.assertIn("SCRUM-7 Registration", response.message)
+
+    @patch("app.services.jira.JiraService._live_issue")
+    def test_take_task_opens_compact_working_session_and_marks_active(
+        self,
+        live_issue,
+    ):
+        live_issue.return_value = Artifact(
+            name="jira_issue",
+            source="Jira Service",
+            content="Jira Issue SCRUM-7",
+            metadata={"issue": self._jira_issue(status="Ready for QA")},
+        )
+
+        response = Orchestrator().process(UserRequest(text="Берём SCRUM-7"))
+
+        self.assertTrue(response.success)
+        self.assertEqual(response.data["intent"]["name"], "prepare_task")
+        self.assertEqual(
+            response.data["intent"]["metadata"]["working_session_mode"],
+            "open",
+        )
+        self.assertIn("SCRUM-7", response.message)
+        self.assertIn("Что известно", response.message)
+        self.assertIn("Что осталось", response.message)
+        self.assertIn("Ready To Work", response.message)
+        self.assertNotIn("Facts", response.message)
+        self.assertNotIn("Recommendations", response.message)
+
+        state = SeenStateStorage(
+            Path(os.environ["QASKILLS_PERSONAL_SEEN_STATE_PATH"])
+        ).load()
+        self.assertIsNotNone(state.get("jira", "issue", "SCRUM-7"))
+
+    def test_refresh_follow_up_uses_active_session_and_asks_missing_result(self):
+        self._mark_scrum7_active()
+
+        response = Orchestrator().process(UserRequest(text="Проверил refresh"))
+
+        self.assertTrue(response.success)
+        self.assertEqual(
+            response.data["intent"]["name"],
+            "working_session_follow_up",
+        )
+        self.assertIn("SCRUM-7", response.message)
+        self.assertIn("Missing Evidence", response.message)
+        self.assertIn("Refresh прошёл или снова был 401?", response.message)
+        self.assertNotIn("Source Pack", response.message)
+        self.assertNotIn("Facts", response.message)
+
+    def test_safari_follow_up_updates_investigation_observation(self):
+        self._mark_scrum7_active()
+        investigation_path = (
+            Path(os.environ["QASKILLS_MEMORY_VAULT_PATH"])
+            / "QASkills"
+            / "Investigations"
+            / "SCRUM-7 - Registration.md"
+        )
+
+        response = Orchestrator().process(UserRequest(text="Только Safari"))
+
+        self.assertIn("Observation", response.message)
+        self.assertIn("Safari", response.message)
+        content = investigation_path.read_text(encoding="utf-8")
+        self.assertIn("User reported Safari-specific behavior.", content)
+        self.assertIn("Reasoning Timeline", content)
+
+    def test_failed_follow_up_records_bug_candidate_without_new_report(self):
+        self._mark_scrum7_active()
+        investigation_path = (
+            Path(os.environ["QASKILLS_MEMORY_VAULT_PATH"])
+            / "QASkills"
+            / "Investigations"
+            / "SCRUM-7 - Registration.md"
+        )
+
+        response = Orchestrator().process(UserRequest(text="Снова 401"))
+
+        self.assertIn("Progress", response.message)
+        self.assertIn("Возможный дефект", response.message)
+        self.assertIn("Missing Evidence", response.message)
+        self.assertNotIn("Source Pack", response.message)
+        content = investigation_path.read_text(encoding="utf-8")
+        self.assertIn("Possible defect from user-reported failure", content)
+        self.assertIn("User note: `Снова 401`", content)
+
+    def test_remaining_follow_up_reads_active_investigation(self):
+        self._mark_scrum7_active()
+
+        response = Orchestrator().process(UserRequest(text="Что осталось?"))
+
+        self.assertIn("Remaining", response.message)
+        self.assertIn("Refresh after login", response.message)
+        self.assertIn("Logout from another tab", response.message)
+        self.assertNotIn("Source Pack", response.message)
+
+    def test_stop_point_follow_up_updates_investigation(self):
+        self._mark_scrum7_active()
+        investigation_path = (
+            Path(os.environ["QASKILLS_MEMORY_VAULT_PATH"])
+            / "QASkills"
+            / "Investigations"
+            / "SCRUM-7 - Registration.md"
+        )
+
+        response = Orchestrator().process(UserRequest(text="Продолжим завтра"))
+
+        self.assertIn("Stop Point", response.message)
+        self.assertIn("сохранён", response.message)
+        content = investigation_path.read_text(encoding="utf-8")
+        self.assertIn("Working session paused.", content)
+        self.assertIn("Next Step: continue from Remaining checks.", content)
+
+    @patch("app.services.jira.JiraService._live_issue")
+    def test_switching_task_pauses_previous_session_and_opens_new_one(
+        self,
+        live_issue,
+    ):
+        self._mark_issue_active("SCRUM-11")
+        previous_path = (
+            Path(os.environ["QASKILLS_MEMORY_VAULT_PATH"])
+            / "QASkills"
+            / "Investigations"
+            / "SCRUM-11 - Auth.md"
+        )
+        live_issue.return_value = Artifact(
+            name="jira_issue",
+            source="Jira Service",
+            content="Jira Issue SCRUM-7",
+            metadata={"issue": self._jira_issue(key="SCRUM-7", status="Ready for QA")},
+        )
+
+        response = Orchestrator().process(UserRequest(text="Берём SCRUM-7"))
+
+        self.assertIn("Previous Session", response.message)
+        self.assertIn("SCRUM-11 приостановлена", response.message)
+        self.assertIn("Ready To Work", response.message)
+        previous_text = previous_path.read_text(encoding="utf-8")
+        self.assertIn("Paused because user switched to SCRUM-7.", previous_text)
+
+    def test_good_morning_offers_resume_from_active_session(self):
+        self._mark_issue_active("SCRUM-11")
+
+        response = Orchestrator().process(UserRequest(text="Доброе утро"))
+
+        self.assertEqual(
+            response.data["intent"]["name"],
+            "working_session_follow_up",
+        )
+        self.assertIn("SCRUM-11", response.message)
+        self.assertIn("Stop Point", response.message)
+        self.assertIn("Remaining", response.message)
+        self.assertNotIn("Source Pack", response.message)
+
+    def test_generic_checked_follow_up_records_progress(self):
+        self._mark_scrum7_active()
+        investigation_path = (
+            Path(os.environ["QASKILLS_MEMORY_VAULT_PATH"])
+            / "QASkills"
+            / "Investigations"
+            / "SCRUM-7 - Registration.md"
+        )
+
+        response = Orchestrator().process(UserRequest(text="Проверил logout"))
+
+        self.assertIn("Progress", response.message)
+        self.assertIn("Missing Evidence", response.message)
+        content = investigation_path.read_text(encoding="utf-8")
+        self.assertIn("User reported a completed check", content)
 
     def test_test_strategy_interprets_jira_and_memory_context(self):
         intent = UserIntent(
@@ -862,12 +1129,13 @@ class ApplicationPipelineTest(unittest.TestCase):
 
     def _jira_issue(
         self,
+        key: str = "SCRUM-7",
         status: str = "In Progress",
         priority: str = "High",
         comments: list[dict[str, str]] | None = None,
     ) -> dict:
         return {
-            "key": "SCRUM-7",
+            "key": key,
             "summary": "Registration with email confirmation",
             "updated": "2026-07-31T09:00:00+03:00",
             "status": status,
@@ -881,6 +1149,30 @@ class ApplicationPipelineTest(unittest.TestCase):
             "comments": list(comments or []),
             "links": [],
         }
+
+    def _mark_scrum7_active(self) -> None:
+        self._mark_issue_active("SCRUM-7")
+
+    def _mark_issue_active(self, issue_key: str) -> None:
+        current = current_jira_issue_state(self._jira_issue(key=issue_key))
+        SeenStateStorage(
+            Path(os.environ["QASKILLS_PERSONAL_SEEN_STATE_PATH"])
+        ).upsert(
+            SeenEntityState(
+                source=current.source,
+                entity_type=current.entity_type,
+                entity_id=current.entity_id,
+                last_seen_at="2026-08-03T09:00:00+00:00",
+                source_updated_at=current.source_updated_at,
+                status_seen=current.status,
+                priority_seen=current.priority,
+                summary_fingerprint=current.summary_fingerprint,
+                description_fingerprint=current.description_fingerprint,
+                links_fingerprint=current.links_fingerprint,
+                comments_seen=current.comment_ids,
+                last_workflow="working_session",
+            )
+        )
 
     def _message_from_heading(self, message: str, heading: str) -> str:
         return message[message.index(f"{heading}\n"):]

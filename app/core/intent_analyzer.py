@@ -17,6 +17,19 @@ class IntentAnalyzer:
         normalized = text.lower()
         issue_key = self._issue_key(text)
 
+        if self._looks_like_working_session_follow_up(normalized, issue_key):
+            return UserIntent(
+                name="working_session_follow_up",
+                raw_text=text,
+                expected_output="working_session_update",
+                confidence=0.9,
+                metadata={
+                    "action": self._working_session_follow_up_action(normalized),
+                    "issue_key": issue_key,
+                    "query": text,
+                },
+            )
+
         if request.metadata.get("action") == "daily.prepare" or normalized in {
             "prepare daily",
             "daily prepare",
@@ -41,10 +54,18 @@ class IntentAnalyzer:
                 metadata={
                     "issue_key": issue_key,
                     "query": self._test_task_strategy_query(text),
+                    "working_session_mode": "open",
                 },
             )
 
         if self._looks_like_prepare_task(normalized, issue_key):
+            mode = (
+                "resume"
+                if self._looks_like_resume_task(normalized)
+                else "open"
+                if self._looks_like_take_task(normalized)
+                else ""
+            )
             return UserIntent(
                 name="prepare_task",
                 raw_text=text,
@@ -53,6 +74,7 @@ class IntentAnalyzer:
                 metadata={
                     "issue_key": issue_key,
                     "query": self._prepare_task_query(text),
+                    "working_session_mode": mode,
                 },
             )
 
@@ -402,10 +424,127 @@ class IntentAnalyzer:
         if issue_key and any(marker in normalized for marker in prepare_markers):
             return True
 
+        if issue_key and (
+            self._looks_like_take_task(normalized)
+            or self._looks_like_resume_task(normalized)
+        ):
+            return True
+
         return (
             any(marker in normalized for marker in prepare_markers)
             and any(marker in normalized for marker in task_markers)
         )
+
+    def _looks_like_take_task(self, normalized: str) -> bool:
+        return normalized.startswith(
+            (
+                "берём ",
+                "берем ",
+                "возьмём ",
+                "возьмем ",
+                "беру ",
+                "take ",
+            )
+        )
+
+    def _looks_like_resume_task(self, normalized: str) -> bool:
+        return normalized.startswith(
+            (
+                "продолжаем ",
+                "продолжим ",
+                "continue ",
+                "resume ",
+            )
+        )
+
+    def _looks_like_working_session_follow_up(
+        self,
+        normalized: str,
+        issue_key: str,
+    ) -> bool:
+        if issue_key:
+            return False
+
+        markers = (
+            "доброе утро",
+            "good morning",
+            "проверил",
+            "проверила",
+            "прошло",
+            "passed",
+            "упало",
+            "failed",
+            "401",
+            "нашёл баг",
+            "нашел баг",
+            "нашла баг",
+            "что осталось",
+            "что известно",
+            "подготовь баг",
+            "есть блокер",
+            "блокер",
+            "не воспроизводится",
+            "только safari",
+            "только в safari",
+            "safari only",
+            "продолжим завтра",
+            "закрываем день",
+            "на сегодня всё",
+            "на сегодня все",
+            "продолжаем",
+        )
+
+        return any(marker in normalized for marker in markers)
+
+    def _working_session_follow_up_action(self, normalized: str) -> str:
+        if "что осталось" in normalized:
+            return "remaining"
+
+        if "что известно" in normalized:
+            return "known"
+
+        if "доброе утро" in normalized or "good morning" in normalized:
+            return "morning_resume"
+
+        if "подготовь баг" in normalized:
+            return "bug_draft"
+
+        if "нашёл баг" in normalized or "нашел баг" in normalized or "нашла баг" in normalized:
+            return "bug_found"
+
+        if (
+            "продолжим завтра" in normalized
+            or "закрываем день" in normalized
+            or "на сегодня всё" in normalized
+            or "на сегодня все" in normalized
+        ):
+            return "stop_point"
+
+        if normalized.strip() == "продолжаем":
+            return "resume"
+
+        if "блокер" in normalized:
+            return "blocker"
+
+        if "не воспроизводится" in normalized:
+            return "not_reproduced"
+
+        if "401" in normalized or "упало" in normalized or "failed" in normalized:
+            return "checked_failed"
+
+        if "прошло" in normalized or "passed" in normalized:
+            return "checked_passed"
+
+        if "только safari" in normalized or "только в safari" in normalized or "safari only" in normalized:
+            return "safari_only"
+
+        if "refresh" in normalized and ("проверил" in normalized or "проверила" in normalized):
+            return "refresh_checked"
+
+        if "проверил" in normalized or "проверила" in normalized:
+            return "checked"
+
+        return "update"
 
     def _looks_like_test_task_strategy(
         self,

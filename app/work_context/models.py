@@ -148,6 +148,18 @@ class PersonalSeenState:
             entities=entities,
         )
 
+    def latest_entity(self) -> SeenEntityState | None:
+        """Return the most recently seen entity, when local state has one."""
+
+        if not self.entities:
+            return None
+
+        return sorted(
+            self.entities.values(),
+            key=lambda entity: entity.last_seen_at,
+            reverse=True,
+        )[0]
+
 
 def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):

@@ -17,6 +17,9 @@ class Settings:
     local_llm_model: str = ""
     provider_probe_timeout_seconds: float = 1.5
     local_llm_timeout_seconds: float = 60.0
+    local_llm_max_tokens: int = 512
+    local_llm_health_timeout_seconds: float = 20.0
+    local_llm_health_max_tokens: int = 8
     codex_command: str = "codex"
     codex_args: str = "exec --skip-git-repo-check"
     codex_timeout_seconds: float = 120.0
@@ -64,6 +67,18 @@ def load_settings() -> Settings:
             "QASKILLS_LOCAL_LLM_TIMEOUT_SECONDS",
             Settings.local_llm_timeout_seconds,
         ),
+        local_llm_max_tokens=_int_env(
+            "QASKILLS_LOCAL_LLM_MAX_TOKENS",
+            Settings.local_llm_max_tokens,
+        ),
+        local_llm_health_timeout_seconds=_float_env(
+            "QASKILLS_LOCAL_LLM_HEALTH_TIMEOUT_SECONDS",
+            Settings.local_llm_health_timeout_seconds,
+        ),
+        local_llm_health_max_tokens=_int_env(
+            "QASKILLS_LOCAL_LLM_HEALTH_MAX_TOKENS",
+            Settings.local_llm_health_max_tokens,
+        ),
         codex_command=os.getenv(
             "QASKILLS_CODEX_COMMAND",
             Settings.codex_command,
@@ -99,6 +114,18 @@ def _float_env(name: str, default: float) -> float:
     raw = os.getenv(name)
 
     if not raw:
+        return default
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+
+    if not raw:
+        return default
+
+    try:
+        return int(raw)
+    except ValueError:
         return default
 
     try:

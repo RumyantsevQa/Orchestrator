@@ -10,11 +10,12 @@ from app.core.orchestrator import Orchestrator
 from app.index.manager import IndexManager
 from app.index.models import IndexedDocument
 from app.providers.router import ProviderRouter
+from app.core.version import APP_VERSION, PRODUCT_NAME, PRODUCT_TAGLINE
 
 
-APP_NAME = "QASkills"
-TAGLINE = "Knowledge Operating System for QA Engineers"
-VERSION = "Alpha 0.1"
+APP_NAME = PRODUCT_NAME
+TAGLINE = PRODUCT_TAGLINE
+VERSION = APP_VERSION
 
 
 class Style:
@@ -263,12 +264,30 @@ def command_status(args: list[str] | None = None) -> int:
     provider_status = provider_router().status()
     status_line("Provider Policy", True, str(provider_status["policy"]))
     status_line(
-        "Local LLM",
-        True,
+        "Local LLM Provider",
+        bool(provider_status["local_provider_reachable"]),
         provider_detail(
-            bool(provider_status["local_available"]),
-            "LM Studio available",
-            "LM Studio not available, source fallback enabled",
+            bool(provider_status["local_provider_reachable"]),
+            "LM Studio reachable",
+            str(provider_status["local_error"] or "LM Studio not reachable"),
+        ),
+    )
+    status_line(
+        "Local Chat Model",
+        bool(provider_status["local_chat_model_available"]),
+        provider_detail(
+            bool(provider_status["local_chat_model_available"]),
+            f"model {provider_status['local_model']}",
+            str(provider_status["local_error"] or "no compatible chat model"),
+        ),
+    )
+    status_line(
+        "Local Generation",
+        bool(provider_status["local_generation_works"]),
+        provider_detail(
+            bool(provider_status["local_generation_works"]),
+            "lightweight generation works",
+            str(provider_status["local_error"] or "generation failed"),
         ),
     )
     status_line(
@@ -302,7 +321,39 @@ def command_doctor(args: list[str] | None = None) -> int:
         checks.append(("Jira Workspace", True, "boundary ready, no live API required"))
         provider_status = provider_router().status()
         checks.append(("Provider Policy", True, str(provider_status["policy"])))
-        checks.append(("Local LLM", True, self_check_label(provider_status["local_available"])))
+        checks.append(
+            (
+                "Local LLM Provider",
+                bool(provider_status["local_provider_reachable"]),
+                provider_detail(
+                    bool(provider_status["local_provider_reachable"]),
+                    "LM Studio reachable",
+                    str(provider_status["local_error"] or "LM Studio not reachable"),
+                ),
+            )
+        )
+        checks.append(
+            (
+                "Local Chat Model",
+                bool(provider_status["local_chat_model_available"]),
+                provider_detail(
+                    bool(provider_status["local_chat_model_available"]),
+                    f"model {provider_status['local_model']}",
+                    str(provider_status["local_error"] or "no compatible chat model"),
+                ),
+            )
+        )
+        checks.append(
+            (
+                "Local Generation",
+                bool(provider_status["local_generation_works"]),
+                provider_detail(
+                    bool(provider_status["local_generation_works"]),
+                    "lightweight generation works",
+                    str(provider_status["local_error"] or "generation failed"),
+                ),
+            )
+        )
         checks.append(("Codex CLI", True, self_check_label(provider_status["codex_available"])))
     except Exception as error:
         checks.append(("Index", False, str(error)))

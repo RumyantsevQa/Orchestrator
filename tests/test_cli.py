@@ -6,6 +6,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from app.core.version import APP_VERSION
 from app.core.models import OrchestratorResponse
 from main import main
 
@@ -78,11 +79,21 @@ class CliReleaseCandidateTest(unittest.TestCase):
         code, output = self.run_cli("help")
 
         self.assertEqual(code, 0)
+        self.assertIn(APP_VERSION, output)
         self.assertIn("Knowledge", output)
         self.assertIn("Search", output)
         self.assertIn("Questions", output)
         self.assertIn("Navigation", output)
         self.assertIn("Diagnostics", output)
+
+    def test_cli_headers_use_current_product_version(self):
+        for command in ("help", "status", "workspace", "demo"):
+            with self.subTest(command=command):
+                code, output = self.run_cli(command)
+
+                self.assertEqual(code, 0)
+                self.assertIn(APP_VERSION, output)
+                self.assertNotIn("Alpha 0.1", output)
 
     def test_status_shows_vault_index_and_document_count(self):
         code, output = self.run_cli("status")
@@ -201,14 +212,14 @@ class CliReleaseCandidateTest(unittest.TestCase):
         code, output = self.run_cli("Помоги", "протестировать", "SCRUM-7")
 
         self.assertEqual(code, 0)
-        self.assertIn("Продолжаю по SCRUM-7: стратегия тестирования.", output)
-        self.assertIn("Что проверить в первую очередь", output)
-        self.assertIn("Основные пользовательские сценарии", output)
-        self.assertIn("Негативные проверки", output)
-        self.assertIn("Граничные случаи", output)
-        self.assertIn("Возможные регрессии", output)
-        self.assertIn("Что пока неизвестно", output)
-        self.assertIn("Это не полный чек-лист", output)
+        self.assertIn("SCRUM-7", output)
+        self.assertIn("Что известно", output)
+        self.assertIn("Что осталось", output)
+        self.assertIn("Риски", output)
+        self.assertIn("Блокеры", output)
+        self.assertIn("Что делать сейчас", output)
+        self.assertIn("Ready To Work", output)
+        self.assertNotIn("Facts", output)
 
     @patch("main.Orchestrator")
     def test_prepare_daily_uses_unified_pipeline_action(self, orchestrator_cls):

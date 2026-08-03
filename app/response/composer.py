@@ -35,6 +35,7 @@ class ResponseComposer:
                     "name": intent.name,
                     "expected_output": intent.expected_output,
                     "confidence": intent.confidence,
+                    "metadata": dict(intent.metadata),
                 },
                 "plan": plan.to_dict(),
                 "artifacts": [artifact.to_dict() for artifact in artifacts],
@@ -52,9 +53,19 @@ class ResponseComposer:
             return "No service artifacts were produced."
 
         if intent.name == "test_task_strategy":
+            if intent.metadata.get("working_session_mode"):
+                return self._compose_working_session_opening_response(
+                    intent,
+                    artifacts,
+                )
             return self._compose_test_strategy_response(intent, artifacts)
 
         if intent.name == "prepare_task":
+            if intent.metadata.get("working_session_mode"):
+                return self._compose_working_session_opening_response(
+                    intent,
+                    artifacts,
+                )
             return self._compose_task_preparation_response(intent, artifacts)
 
         if len(artifacts) == 1 and artifacts[0].source == "Memory Service":
@@ -83,6 +94,161 @@ class ResponseComposer:
         )
 
         return "\n".join(lines)
+
+    def _compose_working_session_opening_response(
+        self,
+        intent: UserIntent,
+        artifacts: list[Artifact],
+    ) -> str:
+        jira_issue = self._artifact_named(artifacts, "jira_issue")
+        jira_error = self._artifact_named(artifacts, "jira_error")
+        search_artifact = self._artifact_named(artifacts, "memory_search_results")
+        issue = jira_issue.metadata.get("issue", {}) if jira_issue else {}
+        sources = search_artifact.metadata.get("results", []) if search_artifact else []
+        comments = issue.get("comments", [])
+        links = issue.get("links", [])
+        issue_key = issue.get("key") or intent.metadata.get("issue_key") or "Task"
+        title = issue.get("summary") or intent.metadata.get("query") or intent.raw_text
+        mode = intent.metadata.get("working_session_mode")
+        switch_artifact = self._artifact_named(artifacts, "working_session_switch")
+
+        lines = [
+            str(issue_key),
+            str(title),
+            "",
+        ]
+
+        if switch_artifact:
+            previous_issue_key = switch_artifact.metadata.get("previous_issue_key")
+            if previous_issue_key:
+                lines.extend(
+                    [
+                        "Previous Session",
+                        f"• {previous_issue_key} приостановлена перед переключением.",
+                        "",
+                    ]
+                )
+
+        delta_lines = self._render_work_context_delta(artifacts)
+
+        if mode == "resume":
+            if delta_lines:
+                lines.extend([*delta_lines, ""])
+            else:
+                lines.extend(["Что изменилось", "• С прошлого просмотра изменений Jira не видно.", ""])
+
+        lines.append("Что известно")
+        lines.extend(self._workspace_known_lines(issue, comments, links, sources, jira_error))
+        lines.extend(["", "Что осталось"])
+        lines.extend(self._workspace_remaining_lines(issue, comments, links, sources))
+        lines.extend(["", "Риски"])
+        lines.extend(self._task_risks(issue, sources, comments))
+        lines.extend(["", "Блокеры"])
+        lines.extend(self._task_start_blockers(issue, sources, jira_error))
+        lines.extend(["", "Что делать сейчас"])
+        lines.append(f"• {self._workspace_next_action(issue, comments, sources)}")
+        lines.extend(["", "Ready To Work"])
+        lines.append("Можно начинать тестирование и писать короткие обновления без номера задачи.")
+
+        return "\n".join(lines)
+
+    def _workspace_known_lines(
+        self,
+        issue: dict,
+        comments: list[dict],
+        links: list[dict],
+        sources: list[dict],
+        jira_error: Artifact | None,
+    ) -> list[str]:
+        if jira_error:
+            lines = [
+                f"• Jira-контекст недоступен: {self._jira_error_summary(jira_error)}"
+            ]
+            if sources:
+                lines.append(
+                    "• Локальная память: "
+                    f"{self._source_titles(sources[:2])}."
+                )
+            return lines
+
+        text = self._strategy_text(issue, sources, comments)
+        known = []
+
+        if comments:
+            latest = self._comment_meaning(str(comments[-1].get("body") or ""))
+            if latest:
+                known.append(f"• Последний комментарий: {latest}")
+            else:
+                excerpt = self._safe_comment_excerpt(str(comments[-1].get("body") or ""))
+                if excerpt:
+                    known.append(f"• Последний комментарий: {excerpt}")
+
+        if self._contains_any(text, ["401"]):
+            known.append("• Есть риск 401 после login/refresh.")
+
+        if self._contains_any(text, ["safari"]):
+            known.append("• Safari уже фигурирует в evidence.")
+
+        if links:
+            linked = ", ".join(
+                link.get("key", "")
+                for link in links[:3]
+                if link.get("key")
+            )
+            if linked:
+                known.append(f"• Есть связанные задачи: {linked}.")
+
+        if issue.get("status") or issue.get("priority"):
+            known.append(f"• Jira: {issue.get('status') or 'статус неизвестен'}, {issue.get('priority') or 'priority unknown'}.")
+
+        return known[:5] or ["• Контекст открыт, но подтверждённых фактов пока мало."]
+
+    def _workspace_remaining_lines(
+        self,
+        issue: dict,
+        comments: list[dict],
+        links: list[dict],
+        sources: list[dict],
+    ) -> list[str]:
+        text = self._strategy_text(issue, sources, comments)
+        remaining = []
+
+        if self._contains_any(text, ["refresh", "обнов"]):
+            remaining.append("□ Refresh после логина.")
+
+        if self._contains_any(text, ["safari"]):
+            remaining.append("□ Safari.")
+
+        if self._contains_any(text, ["logout", "логаут", "выход"]):
+            remaining.append("□ Logout в другой вкладке.")
+
+        if self._contains_any(text, ["cookie", "cookies"]):
+            remaining.append("□ Старые cookies.")
+
+        if links or self._contains_any(text, ["oauth", "google"]):
+            remaining.append("□ OAuth/callback smoke, если входит в scope.")
+
+        if not remaining:
+            areas = self._risk_areas(issue, sources, comments)
+            remaining = [f"□ {area}." for area in areas[:4]]
+
+        return remaining or ["□ Первый проверочный сценарий ещё не выделен."]
+
+    def _workspace_next_action(
+        self,
+        issue: dict,
+        comments: list[dict],
+        sources: list[dict],
+    ) -> str:
+        text = self._strategy_text(issue, sources, comments)
+
+        if self._contains_any(text, ["refresh", "401"]):
+            return "Начать с login → protected page → refresh и сохранить browser/build/evidence."
+
+        if comments:
+            return "Начать с проверки последнего developer note."
+
+        return "Начать с первого unchecked сценария и писать результат коротким сообщением."
 
     def _compose_generated_response(
         self,

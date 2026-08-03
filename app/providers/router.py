@@ -50,6 +50,9 @@ class ProviderRouter:
                 model=settings.local_llm_model,
                 probe_timeout_seconds=settings.provider_probe_timeout_seconds,
                 timeout_seconds=settings.local_llm_timeout_seconds,
+                max_tokens=settings.local_llm_max_tokens,
+                health_timeout_seconds=settings.local_llm_health_timeout_seconds,
+                health_max_tokens=settings.local_llm_health_max_tokens,
             ),
             codex_provider=CodexCLIProvider(
                 command=settings.codex_command,
@@ -103,10 +106,33 @@ class ProviderRouter:
         )
 
     def status(self) -> dict[str, str | bool]:
+        local_health = self._local_health()
+
         return {
             "policy": self.policy.value,
-            "local_available": self.local_provider.is_available(),
+            "local_available": local_health["generation_works"],
+            "local_provider_reachable": local_health["provider_reachable"],
+            "local_chat_model_available": local_health["chat_model_available"],
+            "local_generation_works": local_health["generation_works"],
+            "local_model": local_health["model"],
+            "local_error": local_health["error"],
             "codex_available": self.codex_provider.is_available(),
+        }
+
+    def _local_health(self) -> dict[str, str | bool]:
+        health_check = getattr(self.local_provider, "health_check", None)
+
+        if callable(health_check):
+            return health_check().to_dict()
+
+        available = self.local_provider.is_available()
+
+        return {
+            "provider_reachable": available,
+            "chat_model_available": available,
+            "generation_works": available,
+            "model": "",
+            "error": "" if available else "Local provider unavailable.",
         }
 
     def _providers_for(
