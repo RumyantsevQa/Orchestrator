@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="430" viewBox="0 0 1100 430" role="img" aria-labelledby="title desc">
+  <title id="title">QA Knowledge OS overview</title>
+  <desc id="desc">Runtime connects Markdown knowledge, Jira snapshots and MCP into source-backed context for AI-assisted QA.</desc>
+  <rect width="1100" height="430" fill="#f7fafc"/>
+  <rect x="28" y="28" width="1044" height="374" rx="22" fill="#ffffff" stroke="#d7dee8"/>
+  <text x="70" y="82" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#172033">QA Knowledge OS</text>
+  <text x="70" y="114" font-family="Arial, sans-serif" font-size="16" fill="#536273">Локальный runtime: источники → контекст → AI-assisted QA</text>
+  <g font-family="Arial, sans-serif">
+    <rect x="70" y="170" width="180" height="96" rx="14" fill="#eef6ff" stroke="#8ab8e8"/>
+    <text x="100" y="206" font-size="18" font-weight="700" fill="#183a5a">Vault</text>
+    <text x="100" y="232" font-size="14" fill="#35506a">Markdown / Obsidian</text>
+    <rect x="310" y="170" width="180" height="96" rx="14" fill="#f0fff7" stroke="#8bcfa8"/>
+    <text x="340" y="206" font-size="18" font-weight="700" fill="#1d5132">Index</text>
+    <text x="340" y="232" font-size="14" fill="#3d684c">metadata search</text>
+    <rect x="550" y="170" width="180" height="96" rx="14" fill="#fff8e8" stroke="#e2bf70"/>
+    <text x="580" y="206" font-size="18" font-weight="700" fill="#664c12">Jira</text>
+    <text x="580" y="232" font-size="14" fill="#715b2a">read-only snapshots</text>
+    <rect x="790" y="170" width="210" height="96" rx="14" fill="#f3efff" stroke="#b6a5ee"/>
+    <text x="820" y="206" font-size="18" font-weight="700" fill="#3d2d73">MCP / Codex</text>
+    <text x="820" y="232" font-size="14" fill="#57498a">source-backed answer</text>
+    <path d="M250 218 H310" stroke="#8b98a8" stroke-width="3" marker-end="url(#arrow)"/>
+    <path d="M490 218 H550" stroke="#8b98a8" stroke-width="3" marker-end="url(#arrow)"/>
+    <path d="M730 218 H790" stroke="#8b98a8" stroke-width="3" marker-end="url(#arrow)"/>
+    <text x="70" y="330" font-size="16" fill="#536273">Главная инженерная идея: AI работает не вместо источников, а поверх проверяемого Source Pack.</text>
+  </g>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#8b98a8"/>
+    </marker>
+  </defs>
+</svg>
