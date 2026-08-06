@@ -1,481 +1,238 @@
-# QASkills
+# QA Knowledge OS
 
-**Knowledge Operating System for QA Engineers**
+Локальный движок знаний для QA-инженера.
 
-QASkills is a local-first command-line product that turns a QA engineer's
-Markdown or Obsidian knowledge base into a daily working surface.
+*Knowledge Operating System for QA Engineers.*
 
-Current project state: **Alpha 0.1**.
+[![CI](https://github.com/ilya-motion/qa-knowledge-os/actions/workflows/ci.yml/badge.svg)](https://github.com/ilya-motion/qa-knowledge-os/actions/workflows/ci.yml)
 
-The repository is still named `Orchestrator` internally, but the public product
-name is QASkills.
+> ⚙️ Это не попытка сделать “ещё один чат с AI”. Проект показывает, как я строю
+> инженерную систему вокруг AI: источники, индексация, контекст, ограничения,
+> проверяемость и безопасные границы.
 
-## What QASkills Does Today
+## Что это такое
 
-QASkills gives a QA engineer one CLI entrypoint for daily work with local
-project knowledge:
+QA Knowledge OS — это локальный runtime, который превращает Markdown/Obsidian
+vault в рабочий источник контекста для QA-задач. Он индексирует знания, читает
+Jira в read-only режиме, готовит source pack для AI-ассистента и помогает
+быстро восстановить контекст по задаче, багу или ежедневной работе.
 
-- open a workspace with `qaskills`;
-- inspect Vault and index readiness;
-- search local QA knowledge by indexed metadata;
-- prepare Source Packs for work questions;
-- review recent documents before daily meetings;
-- prepare a Daily Brief from Jira snapshots and related Obsidian knowledge;
-- save new notes back into the configured Vault;
-- open relevant Markdown documents;
-- read Jira Cloud user, projects, and issues through a read-only integration;
-- start Jira-related QA workflows through a safe local boundary;
-- optionally route generated answers through a local LM Studio-compatible
-  provider or Codex CLI adapter.
+Проект находится в состоянии portfolio-ready MVP: он не претендует на идеальный
+продукт, но показывает архитектурный подход к автоматизации QA-процессов.
 
-If no intelligence provider is available, QASkills does not fail. It returns the
-local context, Source Pack, skill guidance, and workspace artifacts it already
-collected.
+## Почему появился проект
 
-## Why This Exists
+Во время QA-работы я регулярно сталкивался с одной и той же проблемой: знания
+были разбросаны между Jira, Obsidian, заметками, переписками, старыми
+исследованиями и локальными файлами.
 
-QA work depends on context: product decisions, old investigations, release
-notes, project memory, testing ideas, risks, and lessons from previous bugs.
+Каждое утро приходилось заново вспоминать:
 
-That context often exists, but it is scattered across documents and hard to
-restore under time pressure. QASkills makes local QA memory inspectable,
-searchable, and usable from one place.
+- что изменилось со вчера;
+- какие задачи требуют внимания;
+- где лежат прошлые решения;
+- какие риски уже обсуждались;
+- что нужно проверить в первую очередь.
 
-## Current Alpha 0.1 Scope
+Мне хотелось не просто “спросить AI”, а дать AI нормальную инженерную опору:
+индекс, источники, правила, контекст и безопасные границы. Так появился QA
+Knowledge OS.
 
-Implemented in the current runtime:
+## Какую проблему я решал
 
-- interactive workspace opened by `qaskills`;
-- unified request pipeline;
-- local Markdown / Obsidian Vault connection;
-- persistent JSON metadata document index;
-- document listing from saved index metadata;
-- metadata search across title, aliases, H1/H2/H3 headings, tags, and path;
-- Source Pack responses with key sources, groups, match reasons, and reading
-  order;
-- `ask` flow with optional generation and source fallback;
-- persistent Daily Briefing from live Jira assigned issues, saved snapshots,
-  factual change analysis, and related Obsidian knowledge;
-- `morning` workflow from recent local documents and Daily Skill guidance;
-- Knowledge Update workflow through `remember`;
-- live Jira Cloud read commands for current user, projects, and issues;
-- Jira Workspace boundary for task analysis, daily preparation, and bug report
-  drafts;
-- provider policies: `AUTO`, `LOCAL_ONLY`, `CODEX_ONLY`, `CODEX_PREFERRED`,
-  `ASK`;
-- LM Studio-compatible Local LLM provider;
-- optional Codex CLI provider adapter;
-- automated regression tests.
+Обычный AI-чат получает текстовый prompt и начинает отвечать. Для QA этого
+мало: без источников он может уверенно ошибаться, забывать ограничения проекта
+или смешивать факты с предположениями.
 
-Not implemented in Alpha:
+Я хотел систему, которая сначала собирает evidence, а уже потом помогает
+рассуждать:
 
-- Jira write operations;
-- Browser automation;
-- Calendar, email, or chat integrations;
-- video/audio analysis in the product runtime;
-- embeddings, vector store, chunks, semantic search, or RAG;
-- SQLite index;
-- packaged global installation.
+| Проблема | Что делает QA Knowledge OS |
+| --- | --- |
+| Знания разбросаны | Индексирует Markdown/Obsidian vault |
+| Jira быстро меняется | Делает read-only снимки и сравнение изменений |
+| AI может выдумывать | Возвращает source pack и явно показывает источники |
+| Контекст теряется | Готовит daily/task context за одну команду |
+| Нельзя рисковать внешними действиями | Jira-интеграция только read-only |
 
-See [Known Limitations](KNOWN_LIMITATIONS.md) for the full current limitation
-set.
+## Почему обычные инструменты не устроили
 
-## Architecture
+- Jira показывает текущие задачи, но не объясняет прошлый контекст.
+- Obsidian хранит знания, но сам по себе не является рабочим runtime.
+- Поиск по файлам находит текст, но не собирает рабочий контекст.
+- AI-чат помогает формулировать мысли, но без источников легко ошибается.
+- RAG/векторная база была бы преждевременной сложностью для MVP.
 
-```text
-User
-  |
-  v
-QASkills CLI / Workspace
-  |
-  v
-Intent Analyzer
-  |
-  v
-Task Planner
-  |
-  v
-Capability Registry
-  |
-  v
-Plan Executor
-  |
-  +--> Memory Service
-  +--> Skill Service
-  +--> Jira Service
-  +--> Snapshot Service
-  +--> Change Analysis Service
-  +--> Daily Brief Service
-  |
-  v
-Context Composer       only when generation is planned
-  |
-  v
-Prompt Builder         only when generation is planned
-  |
-  v
-LLM Service            only when generation is planned
-  |
-  v
-Provider Router        Local LLM / Codex CLI / fallback
-  |
-  v
-Response Composer
-  |
-  v
-User Response
+Поэтому я сделал локальный knowledge engine: простой, проверяемый, управляемый и
+понятный.
+
+## Какое решение получилось
+
+Система принимает рабочий запрос, собирает релевантные источники, при
+необходимости читает Jira, поднимает локальную память и возвращает структурный
+пакет контекста для Codex или другого AI-ассистента.
+
+Главная идея: **AI не должен быть источником истины. AI должен работать поверх
+источников истины.**
+
+## Основные возможности
+
+- 📚 Индексация Markdown/Obsidian vault.
+- 🔎 Поиск по заголовкам, тегам, alias, путям и структуре документов.
+- 🧭 Source Pack: источники, причины совпадения и порядок чтения.
+- 🧩 MCP-сервер для подключения к AI-ассистентам.
+- 🧾 Read-only Jira-интеграция.
+- 📆 Daily snapshots и сравнение изменений.
+- 🧠 Подготовка контекста для daily, задачи, бага или регрессии.
+- 🛡️ Fallback без LLM: если модель недоступна, система всё равно возвращает
+  полезный локальный контекст.
+- ✅ Автотесты для runtime-слоя.
+
+## Архитектура
+
+```mermaid
+flowchart TD
+    User["QA-инженер"] --> CLI["CLI / рабочая поверхность"]
+    User --> AI["AI-ассистент"]
+
+    CLI --> API["Knowledge API"]
+    AI --> MCP["MCP-сервер"]
+    MCP --> API
+
+    API --> Planner["Планирование возможностей"]
+    Planner --> Executor["Исполнитель плана"]
+
+    Executor --> Memory["Memory Service<br/>Markdown / Obsidian"]
+    Executor --> Index["Document Index<br/>JSON metadata"]
+    Executor --> Jira["Jira Service<br/>read-only"]
+    Executor --> Snapshots["Daily Snapshots"]
+    Executor --> Skills["QA Skills metadata"]
+    Executor --> Providers["Опциональный LLM provider"]
+
+    Memory --> Vault["Локальный vault"]
+    Index --> Cache[".qaskills/document_index.json"]
+    Jira --> JiraCloud["Jira Cloud"]
+    Snapshots --> LocalHistory["Локальная история"]
+
+    Executor --> Pack["Source Pack"]
+    Pack --> AI
+    Pack --> User
 ```
 
-The planner works through named capabilities, not concrete service
-implementations. The executor runs the plan through the service registry. The
-Context Composer and Prompt Builder are created only for requests where the
-plan explicitly includes generation.
+### Граница ответственности
 
-## Repository Map
+```mermaid
+sequenceDiagram
+    participant U as QA-инженер
+    participant C as Codex
+    participant M as MCP
+    participant K as Knowledge OS
+    participant V as Vault
+    participant J as Jira
 
-```text
-main.py                  CLI implementation and workspace commands
-qaskills                 Local executable wrapper
-app/core/                Intent, planning, execution, capabilities, config
-app/index/               Persistent JSON metadata Document Index
-app/services/            Service interfaces and current service implementations
-app/providers/           Local LLM, Codex CLI adapter, and Provider Router
-app/context/             Context composition boundary for generation flows
-app/prompt/              Prompt boundary for generation flows
-app/response/            User-facing response and Source Pack composition
-tests/                   Automated regression tests
-knowledge/               Small sample Markdown Vault for first run
-docs/archive/            Historical release documentation
+    U->>C: Помоги подготовиться к задаче
+    C->>M: Запросить контекст
+    M->>K: build_context(goal, query, jira_key)
+    K->>V: Найти локальные знания
+    K->>J: Прочитать Jira read-only
+    K-->>M: Source Pack
+    M-->>C: Факты, источники, пробелы
+    C-->>U: Ответ с разделением фактов и гипотез
 ```
 
-## Document Index
-
-The index stores metadata for every Markdown document in the configured Vault:
-
-- title;
-- vault-relative path;
-- folder;
-- modified time;
-- size;
-- H1/H2/H3 headings;
-- aliases from frontmatter;
-- tags from frontmatter.
-
-The index is saved on disk and reused between commands. It is rebuilt when no
-saved index exists, when the configured Vault path changes, or after
-`qaskills remember` saves a new note.
-
-## Configuration
-
-QASkills reads configuration from environment variables:
-
-```bash
-export QASKILLS_MEMORY_VAULT_PATH="/path/to/ObsidianVault"
-export QASKILLS_DOCUMENT_INDEX_PATH=".qaskills/document_index.json"
-export QASKILLS_PROVIDER_POLICY="AUTO"
-export QASKILLS_LOCAL_LLM_BASE_URL="http://localhost:1234/v1"
-export JIRA_URL="https://your-domain.atlassian.net"
-export JIRA_EMAIL="you@example.com"
-export JIRA_API_TOKEN="your-api-token"
-```
-
-QASkills also automatically reads a local `.env` file from the repository root.
-Do not commit `.env`.
-
-If `QASKILLS_MEMORY_VAULT_PATH` is not set, QASkills uses the repository's
-`knowledge/` folder as a small sample Vault. For real usage, point the variable
-to your Obsidian Vault or another Markdown knowledge base.
-
-Provider policy controls routing behavior:
-
-- `AUTO`: use the local LM Studio-compatible provider when available,
-  otherwise continue with local source fallback;
-- `LOCAL_ONLY`: use only the local LM Studio-compatible provider;
-- `CODEX_ONLY`: use only the Codex CLI adapter;
-- `CODEX_PREFERRED`: try Codex CLI first, then the local provider;
-- `ASK`: ask interactively when a terminal is available.
-
-## Quick Start
-
-From the repository root:
+## Как выглядит работа
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 
-./qaskills
-./qaskills doctor
-./qaskills find architecture
-./qaskills ask "What is QASkills architecture?"
-./qaskills prepare daily
-./qaskills morning
-./qaskills remember "Daily decision: use QASkills as the QA entrypoint"
-./qaskills jira whoami
-./qaskills jira projects
-./qaskills jira issue SCRUM-42
-./qaskills jira SCRUM-42
-./qaskills jira bug SCRUM-42
-```
-
-With a real Obsidian Vault:
-
-```bash
-export QASKILLS_MEMORY_VAULT_PATH="/path/to/ObsidianVault"
+export QASKILLS_MEMORY_VAULT_PATH="./demo/vault"
 export QASKILLS_DOCUMENT_INDEX_PATH=".qaskills/document_index.json"
 
 ./qaskills doctor
-./qaskills find architecture
-./qaskills ask "Что мы решили про архитектуру?"
-```
-
-Python entrypoint:
-
-```bash
-.venv/bin/python main.py help
-.venv/bin/python main.py status
-.venv/bin/python main.py demo
-```
-
-## CLI Commands
-
-### Workspace
-
-```bash
-./qaskills
-./qaskills workspace
-```
-
-In an interactive terminal, `qaskills` opens the workspace menu. The workspace
-offers daily preparation, task analysis, knowledge search, bug report drafting,
-knowledge saving, Jira work, meeting analysis, and settings.
-
-### Knowledge
-
-```bash
-./qaskills status
-./qaskills doctor
-./qaskills prepare daily
-./qaskills morning
-./qaskills remember "Decision: keep QASkills local-first for Alpha"
-```
-
-`remember` saves a Markdown note to the configured Vault and refreshes the
-document index immediately.
-
-### Daily Briefing
-
-```bash
+./qaskills find authorization
+./qaskills ask "Что мы знаем про авторизацию?"
 ./qaskills prepare daily
 ```
 
-Builds a readable morning brief from live Jira data assigned to the current
-user. QASkills collects the assigned issues through JiraService, saves the
-current state as a local snapshot, loads the previous snapshot, compares both
-states through ChangeAnalysisService, and then renders the final report through
-DailyBriefService.
+## Скриншоты
 
-After Jira changes are collected, the same workflow also asks MemoryService to
-look for related Obsidian/Markdown knowledge. It checks indexed notes and note
-content for the current Jira keys, project references, open questions,
-yesterday's conclusions, and test ideas. These sources are included in the
-Daily Brief as factual references. If no related knowledge exists, QASkills says
-that explicitly. This step does not use LLM generation.
+Скриншоты пока не добавлены в репозиторий, чтобы не публиковать локальные
+данные. Точный список кадров лежит в [docs/screenshots.md](docs/screenshots.md).
 
-Snapshots are saved as local QASkills memory artifacts under:
+| Что снять | Что должно быть видно |
+| --- | --- |
+| Структура проекта | `app/`, `tests/`, `docs/`, `demo/`, CI |
+| `./qaskills doctor` | Проверка готовности vault/index/provider |
+| `./qaskills find authorization` | Source Pack и причины совпадения |
+| `./qaskills prepare daily` | Сбор daily-контекста |
+| GitHub Actions | Зелёный lint/tests pipeline |
 
-```text
-QASkills/Memory/Snapshots/Daily/
-```
+## GIF
 
-Each snapshot stores timestamp, project, assigned issues, status, priority,
-assignee, updated time, sprint, due date, labels, story points when available,
-description hash, and comment count.
+GIF-сценарий на 30-40 секунд описан в [docs/gif-demo.md](docs/gif-demo.md).
 
-Example shape:
+Короткая идея: показать, как за несколько команд система превращает локальные
+знания и Jira-контекст в рабочий Source Pack для AI.
 
-```text
-🌅 Good morning, Ilya
+## Что реализовано сейчас
 
-Today's Daily Brief
+- [x] CLI entrypoint.
+- [x] Индексация Markdown-документов.
+- [x] Поиск по metadata.
+- [x] Knowledge API.
+- [x] MCP-сервер.
+- [x] Read-only Jira boundary.
+- [x] Daily snapshots.
+- [x] Optional LLM provider boundary.
+- [x] Регрессионные тесты.
+- [x] CI: lint + tests.
+- [x] Обезличенные demo-данные.
 
-Sprint: QAOS Sprint 5
-Assigned: 3 issues
-Snapshot: 2026-07-30
-Compared with: 2026-07-29
+## Что будет дальше
 
-Assigned Work:
-• SCRUM-1 Implement authentication
-  Status: In Progress | Priority: Medium | Due: No due date | Updated: 2026-07-30
+- Упаковка CLI для установки одной командой.
+- Более явный `demo mode` без реальной Jira.
+- HTML-отчёт Source Pack.
+- Визуальная страница “утреннего контекста”.
+- Больше integration-тестов вокруг MCP и Jira failures.
 
-Obsidian Knowledge:
-• Found 2 related Obsidian source(s).
-• Linked Jira notes:
-  - SCRUM-1 Auth Daily (QASkills/Memory/Projects/SCRUM-1 Auth Daily.md)
-    Evidence: # SCRUM-1 Auth Daily
-• Open questions:
-  - SCRUM-1 Auth Daily (QASkills/Memory/Projects/SCRUM-1 Auth Daily.md)
-    Evidence: ## Open questions
+## Почему проект интересен инженеру
 
-Yesterday:
-• Closed SCRUM-14: Login validation
-• SCRUM-18 moved from To Do to In Progress
+В этом проекте важен не объём кода, а подход:
 
-New today:
-• SCRUM-27 OAuth callback
+- AI встроен в workflow, а не приклеен сверху;
+- источники важнее генерации;
+- внешний мир читается безопасно;
+- система умеет деградировать без LLM;
+- архитектура разделяет runtime, знания и reasoning;
+- тесты проверяют границы, а не только happy path.
 
-Risks:
-• 1 high-priority assigned issue remains open.
+## Ограничения проекта
 
-Suggested Daily Report
-"Since the previous snapshot, SCRUM-14 moved to done. Status changed for SCRUM-18. Newly assigned: SCRUM-27."
-```
+- Jira-интеграция intentionally read-only.
+- Нет полноценного semantic search или vector DB.
+- Нет packaged installer.
+- Demo-данные обезличены и не отражают весь реальный рабочий контекст.
+- UI пока CLI-first.
 
-### Search
+## Roadmap
 
-```bash
-./qaskills find architecture
-./qaskills find migration
-./qaskills find "QASkills Architecture"
-```
+| Версия | Фокус |
+| --- | --- |
+| v0.1 | Локальный index, search, Source Pack |
+| v0.2 | Daily snapshots, Jira read-only, MCP |
+| v0.3 | Demo mode, HTML report, улучшенная диагностика |
+| v0.4 | Packaging и публичный пример end-to-end workflow |
 
-Search uses indexed metadata, not full Markdown body text.
+## GitHub
 
-### Questions
+**Описание:** `Локальный QA Knowledge OS: Markdown-память, Jira snapshots, Source Pack и MCP-контекст для AI-assisted QA.`
 
-```bash
-./qaskills ask "Что мы решили про архитектуру?"
-```
+**Topics:** `qa`, `quality-assurance`, `ai-automation`, `knowledge-management`,
+`obsidian`, `markdown`, `jira`, `mcp`, `local-first`, `python`,
+`engineering-portfolio`
 
-The command searches indexed local knowledge and prepares a grounded Source
-Pack. If a selected intelligence provider is available, QASkills also asks it
-to generate a response from the composed context. If no provider is available,
-the command returns a clear fallback with sources and collected context.
+## Лицензия
 
-### Navigation
-
-```bash
-./qaskills open architecture
-./qaskills open QASkills
-```
-
-If several documents match, QASkills offers a numbered choice in an interactive
-terminal.
-
-### Jira Workspace
-
-```bash
-./qaskills jira
-./qaskills jira whoami
-./qaskills jira projects
-./qaskills jira issue SCRUM-42
-./qaskills jira SCRUM-42
-./qaskills jira analyze SCRUM-42
-./qaskills jira bug SCRUM-42
-./qaskills jira daily SCRUM-42
-```
-
-`whoami`, `projects`, and `issue` call the Jira Cloud REST API. Analysis,
-daily, and bug report commands still use the local QASkills workspace path and
-combine local memory, Skill Service guidance, optional generation, and Jira
-workspace artifacts.
-
-## Live Jira Integration
-
-QASkills supports Jira Cloud Basic Auth with an Atlassian account email and API
-token.
-
-Create an API token:
-
-1. Open the Atlassian account API token page:
-   <https://id.atlassian.com/manage-profile/security/api-tokens>.
-2. Create a token for QASkills.
-3. Copy it once and store it only in your local `.env`.
-
-Create `.env` in the repository root:
-
-```text
-JIRA_URL=https://your-domain.atlassian.net
-JIRA_EMAIL=you@example.com
-JIRA_API_TOKEN=your-api-token
-```
-
-Never commit `.env` and never paste the token into terminal output, docs, or
-issues.
-
-Verify the connection:
-
-```bash
-./qaskills jira whoami
-./qaskills jira projects
-./qaskills jira issue SCRUM-42
-```
-
-If configuration is incomplete, QASkills prints which variables are missing
-without printing the token.
-
-### Diagnostics
-
-```bash
-./qaskills demo
-```
-
-Runs a short product demonstration: Vault connection, index readiness, recent
-documents, metadata search, Source Pack preparation, optional provider
-fallback, and completion summary.
-
-## Natural Language Examples
-
-The planner can route these local-memory requests:
-
-```bash
-.venv/bin/python main.py Покажи мои проекты
-.venv/bin/python main.py Покажи последние документы
-.venv/bin/python main.py Открой документ QASkills
-.venv/bin/python main.py Покажи структуру Vault
-.venv/bin/python main.py Покажи документы проекта QASkills
-.venv/bin/python main.py Покажи документы с тегом QA
-.venv/bin/python main.py Покажи документы, где есть заголовок Architecture
-.venv/bin/python main.py Запомни это: решение обсуждено на daily
-.venv/bin/python main.py jira анализ задачи SCRUM-42
-```
-
-## Demo
-
-Run:
-
-```bash
-./qaskills demo
-```
-
-For a five-minute presentation flow, see [demo.md](demo.md).
-
-## Documentation
-
-- [Demo Script](demo.md)
-- [Vision](docs/Vision.md)
-- [Roadmap](docs/Roadmap.md)
-- [Architecture](docs/Architecture.md)
-- [Knowledge Model](docs/KnowledgeModel.md)
-- [Architecture Decision Records](docs/adr/)
-- [Changelog](CHANGELOG.md)
-- [Known Limitations](KNOWN_LIMITATIONS.md)
-- [Historical v1.0 RC documents](docs/archive/v1.0-rc/)
-
-The archived v1.0 RC documents preserve an earlier release-candidate stage.
-They are not the current Alpha source of truth.
-
-## Verification
-
-```bash
-.venv/bin/python -m unittest discover -s tests
-.venv/bin/python -m py_compile main.py qaskills app/core/config.py app/core/orchestrator.py app/index/manager.py app/index/models.py app/services/memory.py app/services/jira.py app/services/jira_client.py app/services/daily_models.py app/services/snapshot.py app/services/change_analysis.py app/services/daily_brief.py app/response/composer.py tests/test_cli.py tests/test_application_pipeline.py tests/test_jira_client.py tests/test_snapshot_service.py tests/test_change_analysis_service.py tests/test_daily_brief_service.py
-./qaskills doctor
-./qaskills ask "What is QASkills architecture?"
-./qaskills workspace
-./qaskills prepare daily
-./qaskills jira whoami
-./qaskills jira projects
-./qaskills jira issue SCRUM-42
-./qaskills jira SCRUM-42
-./qaskills demo
-```
+MIT. См. [LICENSE](LICENSE).

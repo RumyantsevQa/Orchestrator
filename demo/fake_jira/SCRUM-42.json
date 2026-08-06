@@ -1,0 +1,8 @@
+{
+  "key": "SCRUM-42",
+  "summary": "Добавить проверку истечения сессии",
+  "status": "In Progress",
+  "assignee": "Demo QA",
+  "labels": ["auth", "regression"],
+  "note": "Фиктивная задача для демонстрации. Не содержит реальных Jira-данных."
+}
