@@ -4,7 +4,7 @@
 
 *Knowledge Operating System for QA Engineers.*
 
-[![CI](https://github.com/RumyantsevQa/Orchestrator/actions/workflows/ci.yml/badge.svg)](https://github.com/RumyantsevQa/Orchestrator/actions/workflows/ci.yml)
+[![CI](https://github.com/RumyantsevQa/qa-knowledge-os/actions/workflows/ci.yml/badge.svg)](https://github.com/RumyantsevQa/qa-knowledge-os/actions/workflows/ci.yml)
 
 > ⚙️ Это не попытка сделать “ещё один чат с AI”. Проект показывает, как я строю
 > инженерную систему вокруг AI: источники, индексация, контекст, ограничения,
